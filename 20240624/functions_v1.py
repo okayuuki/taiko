@@ -12,6 +12,9 @@ import shap
 import locale
 import seaborn as sns
 import matplotlib as mpl
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 from dateutil.relativedelta import relativedelta
 from IPython.display import display, clear_output
 from sklearn.ensemble import RandomForestRegressor
@@ -247,7 +250,7 @@ def create_lagged_features(hourly_data, hourly_target, hourly_leave, best_range_
     lag_features = pd.DataFrame(index=hourly_data.index)
     
     # 最適な遅れ範囲に基づいてローリング平均を計算し、説明変数として追加
-    lag_features[f'{label_name}（t-{best_range_start}~t-{best_range_end}）'] = hourly_data.shift(best_range_start).rolling(window=best_range_end - best_range_start + 1).sum()
+    lag_features[f'{label_name}best（t-{best_range_start}~t-{best_range_end}）'] = hourly_data.shift(best_range_start).rolling(window=best_range_end - best_range_start + 1).sum()
     lag_features['入庫かんばん数（t）'] = hourly_target
     lag_features['出庫かんばん数（t）'] = hourly_leave
     
@@ -409,6 +412,25 @@ def drop_columns_with_word(df, word):
     columns_to_drop = [column for column in df.columns if word in column]
     return df.drop(columns=columns_to_drop)
 
+def feature_engineering(df):
+    # 新しい '荷役時間' 列を計算
+    df['荷役時間'] = df['荷役時間(t-4)'] + df['荷役時間(t-5)'] + df['荷役時間(t-6)']
+    
+    # 新しい列を初期化
+    df['部品置き場からの入庫'] = 0
+    df['部品置き場で滞留'] = 0
+    df['定期便にモノ無し'] = 0
+    
+    # 条件ロジックを適用
+    for index, row in df.iterrows():
+        if row['荷役時間'] == 0 and row['入庫かんばん数（t）'] > 0:
+            df.at[index, '部品置き場からの入庫'] = row['入庫かんばん数（t）']
+        elif row['荷役時間'] > 0 and row['入庫かんばん数（t）'] == 0:
+            df.at[index, '部品置き場で滞留'] = 1
+            df.at[index, '定期便にモノ無し'] = 1
+    
+    return df
+
 # 過去X時間前からY時間前前までの平均生産台数_加重平均済を計算する関数
 def calculate_window_width(data, start_hours_ago, end_hours_ago, timelag, reception_timelag):
     data = data.sort_values(by='日時')
@@ -431,4 +453,193 @@ def calculate_window_width(data, start_hours_ago, end_hours_ago, timelag, recept
     # 在庫数（箱）のシフト
     data[f'在庫数（箱）（t-{timelag}）'] = data['在庫数（箱）'].shift(timelag)
     
+    data[f'間口_A1の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_A1'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'間口_A2の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_A2'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'間口_B1の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B1'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'間口_B2の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B2'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'間口_B3の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B3'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'間口_B4の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B4'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    
+    data[f'部品置き場からの入庫（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場からの入庫'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'部品置き場で滞留（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場で滞留'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'定期便にモノ無し（t-{end_hours_ago}~t-{timelag}）'] = data['定期便にモノ無し'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    
+    
     return data
+    
+def process_shiresakibin_flag(lagged_features, arrival_times_df):
+
+    #平均納入時間がtimedelta64[ns]の型になっている。0days 00:00:00みたいな形
+    #print(lagged_features.dtypes)
+
+    # arrival_times_dfの仕入先名が一致する行を抽出、仕入先ダイヤフラグ
+    # 仕入先名と発送場所名が一致する行を抽出
+    matched_arrival_times_df = arrival_times_df[
+        (arrival_times_df['仕入先名'].isin(lagged_features['仕入先名'])) &
+        (arrival_times_df['発送場所名'].isin(lagged_features['発送場所名']))
+    ]
+    # arrival_times_dfの仕入先名列をlagged_featuresに結合
+    lagged_features2 = lagged_features.merge(matched_arrival_times_df, on=['仕入先名','発送場所名'], how='left')
+
+    # '納入便'を含む列名を見つける
+    # columns_delivery_numは'納入便'を含む列名
+    columns_delibery_num = find_columns_with_word_in_name(lagged_features2, '納入便')
+
+    # 納入便がつく列をint型に変換
+    lagged_features2[columns_delibery_num] = pd.to_numeric(lagged_features2[columns_delibery_num], errors='coerce').fillna(0).astype(int)
+
+    # '平均納入時間' を含む列名を見つける
+    # columns_delibery_timesは'平均納入時間' を含む列名
+    columns_delibery_times = find_columns_with_word_in_name(lagged_features2, '平均納入時間')
+    # 納入便の列に基づいて対応する「早着」「定刻」「遅着」の情報を追加
+    lagged_features2['早着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_早着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+    lagged_features2['定刻'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_定刻'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+    lagged_features2['遅着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_遅着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+
+    # timedelta形式に変換
+    lagged_features2[columns_delibery_times] = pd.to_timedelta(lagged_features2[columns_delibery_times])
+
+    # 変換を適用
+    lagged_features2[columns_delibery_times] = lagged_features2[columns_delibery_times].apply(timedelta_to_hhmmss)
+
+    # 新しい列を追加し、条件に基づいて「仕入先便到着フラグ」を設定
+    lagged_features2['仕入先便到着フラグ'] = lagged_features2.apply(set_arrival_flag, columns_delibery_num=columns_delibery_num,columns_delibery_times=columns_delibery_times, axis=1)
+
+    # 特定の文字列を含む列を削除する
+    lagged_features2 = drop_columns_with_word(lagged_features2, '早着')
+    lagged_features2 = drop_columns_with_word(lagged_features2, '定刻')
+    lagged_features2 = drop_columns_with_word(lagged_features2, '遅着')
+    lagged_features2 = drop_columns_with_word(lagged_features2, '受入')
+    lagged_features2 = drop_columns_with_word(lagged_features2, '平均納入時間')
+
+    return lagged_features2
+
+
+def display_data_app(line_data, bar_data, df2):
+    line_df = pd.DataFrame(line_data)
+    line_df['日時'] = pd.to_datetime(line_df['日時'], format='%Y%m%d%H')
+
+    bar_df = pd.DataFrame(bar_data)
+    bar_df['日時'] = pd.to_datetime(bar_df['日時'])
+    
+    df2 = pd.DataFrame(df2)
+    df2['日時'] = pd.to_datetime(df2['日時'])
+
+    # カスタムCSSを適用して画面サイズを中央にする
+    st.markdown(
+        """
+        <style>
+        .main .block-container {
+            max-width: 60%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # サイドバーに使い方を表示
+    #st.sidebar.header("使い方")
+    #st.sidebar.markdown("""
+    #1. 上部の折れ線グラフで全体のデータ推移を確認できます。
+    #2. 下部の棒グラフでは、特定の日時におけるデータを詳細に表示します。
+    #3. スライドバーで日時を選択し、結果が動的に変更されます。
+    #""")
+
+    # 上に折れ線グラフ
+    fig_line = go.Figure()
+    for var in line_df.columns[1:]:
+        fig_line.add_trace(go.Scatter(x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'), y=line_df[var], mode='lines+markers', name=var))
+        
+    #在庫増減数なので、在庫数を計算する時は、以下の処理をする
+    #        # 2つ目の折れ線グラフ
+    #        fig_line.add_trace(go.Scatter(
+    #            x=df2_subset.index.strftime('%Y-%m-%d-%H'),
+    #            #★
+    #            y=y_pred_subset+y_base_subset,
+    #            #y=y_pred_subset+df2_subset.shift(1),
+    #            mode='lines+markers',
+    #            name='AI推定値'
+    #        ))
+
+    fig_line.update_layout(
+        title="在庫推移",
+        xaxis_title="日時",
+        yaxis_title="在庫数（箱）",
+        height=500,  # 高さを調整
+        width=100,   # 幅を調整
+        margin=dict(l=0, r=0, t=30, b=0)
+    )
+
+    # 折れ線グラフを表示
+    st.plotly_chart(fig_line, use_container_width=True)
+
+    # スライドバーをメインエリアに配置
+    min_datetime = bar_df['日時'].min().to_pydatetime()
+    max_datetime = bar_df['日時'].max().to_pydatetime()
+    
+    print(min_datetime,max_datetime)
+    
+    # サイドバーに日時選択スライダーを表示
+    st.sidebar.title("要因分析")
+    with st.sidebar.form("date_selector_form"):
+        selected_datetime = st.slider(
+            "要因分析の結果を表示する日時を選択してください",
+            min_value=min_datetime,
+            max_value=max_datetime,
+            value=min_datetime,
+            format="YYYY-MM-DD HH",
+            step=pd.Timedelta(hours=1)
+        )
+        submitted = st.form_submit_button("適用")
+
+    if submitted:
+        # 選択された日時のデータを抽出
+        filtered_df1 = bar_df[bar_df['日時'] == pd.Timestamp(selected_datetime)]
+        filtered_df2 = df2[df2['日時'] == pd.Timestamp(selected_datetime)]
+
+        if not filtered_df1.empty:
+            st.write(f"選択された日時: {selected_datetime}")
+
+            # データを長い形式に変換
+            df1_long = filtered_df1.melt(id_vars=['日時'], var_name='変数', value_name='値')
+            # データフレームを値の降順にソート
+            df1_long = df1_long.sort_values(by='値', ascending=True)
+
+
+            # ホバーデータに追加の情報を含める
+            hover_data = {}
+            for i, row in filtered_df2.iterrows():
+                for idx, value in row.iteritems():
+                    if idx != '日時':
+                        hover_data[idx] = f"<b>日時:</b> {row['日時']}<br><b>{idx}:</b> {value:.2f}<br>"
+
+            # 横棒グラフ
+            fig_bar = px.bar(df1_long,
+                             x='値', y='変数',
+                             orientation='h',
+                             labels={'値': '寄与度（SHAP値）', '変数': '変数', '日時': '日時'},
+                             title=f"{selected_datetime}のデータ")
+
+            
+            # 色の設定
+            colors = ['red' if v >= 0 else 'blue' for v in df1_long['値']]
+            # ホバーテンプレートの設定
+            # SHAP値ではないものを表示用
+            fig_bar.update_traces(
+                marker_color=colors,
+                hovertemplate=[hover_data[v] for v in df1_long['変数']]
+            )
+
+            fig_bar.update_layout(
+                title="要因分析",
+                height=500,  # 高さを調整
+                width=100,   # 幅を調整
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+
+            # 横棒グラフを表示
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.write("データがありません")

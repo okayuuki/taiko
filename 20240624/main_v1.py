@@ -30,11 +30,12 @@ from sklearn.metrics import mean_squared_error, max_error, mean_absolute_error
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime, date, time
 
 # フォント設定の変更（日本語対応のため）
 mpl.rcParams['font.family'] = 'MS Gothic'
 
-from functions_v1 import calculate_hourly_counts,calculate_business_time_base,calculate_business_time_order,calculate_business_time_reception,calculate_median_lt,find_best_lag_range,create_lagged_features,add_part_supplier_info,find_columns_with_word_in_name,calculate_elapsed_time_since_last_dispatch,timedelta_to_hhmmss,set_arrival_flag,drop_columns_with_word,calculate_window_width
+from functions_v1 import calculate_hourly_counts,calculate_business_time_base,calculate_business_time_order,calculate_business_time_reception,calculate_median_lt,find_best_lag_range,create_lagged_features,add_part_supplier_info,find_columns_with_word_in_name,calculate_elapsed_time_since_last_dispatch,timedelta_to_hhmmss,set_arrival_flag,drop_columns_with_word,calculate_window_width,display_data_app,process_shiresakibin_flag,feature_engineering
 
 #生データのパス
 folder_path_zaikoMB = '生データ/在庫推移MB'
@@ -80,12 +81,14 @@ end_date = '2024-03-31'
 
 file_path = file_path_rack
 merged_data_for_robot_and_maguchi = pd.read_csv(file_path, encoding='shift_jis')
+merged_data_for_robot_and_maguchi['日時'] = pd.to_datetime(merged_data_for_robot_and_maguchi['日時'])
 
 file_path = file_path_arrivalflag
 arrival_times_df = pd.read_csv(file_path, encoding='shift_jis')
 
 file_path = file_path_kumitate2
 kumitate_data = pd.read_csv(file_path, encoding='shift_jis')
+kumitate_data['日時'] = pd.to_datetime(kumitate_data['日時'], errors='coerce')
 
 file_path = file_path_teikibin2
 teikibin_df = pd.read_csv(file_path, encoding='shift_jis')
@@ -131,13 +134,26 @@ results_df = pd.DataFrame(columns=['品番','仕入先名','平均在庫','Ridge
 # 全ての警告を無視する
 warnings.filterwarnings('ignore')
 
-
 # Streamlitアプリケーションのタイトル
-st.title("在庫変動要因分析（仮）")
+st.title("在庫変動要因分析（仮）App")
 # 品番リスト
 unique_hinban_list = df['品番'].unique()
-# 品番を選択してください
-product = st.selectbox("品番を選択してください", unique_hinban_list)
+
+# サイドバーに品番選択ボックスを作成
+st.sidebar.header("品番選択")
+
+with st.sidebar.form(key='my_form'):
+    # サイドバーに品番選択ボックスを作成
+    product = st.selectbox("品番を選択してください", unique_hinban_list)
+    
+    # 「適用」ボタンをフォーム内に追加
+    apply_button = st.form_submit_button(label='適用')
+
+# 適用ボタンが押されたときの処理
+if apply_button:
+    st.write(f"選択された品番: {product}")
+    # ここに実行したい処理を記述
+    #execute_task(product)
 
 #品番の数だけループを回す
 count = 0
@@ -151,28 +167,33 @@ for part_number in [product]:#unique_hinban_list:
     
     #part_number = str(part_number)
     
+    # タイムスタンプ系のデータ処理
     # ある品番の1時間毎の発注かんばん数、検収かんばん数、入庫かんばん数を計算
     hourly_counts_of_order, _ , _ = calculate_hourly_counts(df, part_number, order_time_col, start_date, end_date)
     hourly_counts_of_out, _ , _ = calculate_hourly_counts(df, part_number, leave_time_col, start_date, end_date)
     hourly_counts_of_in, _ , _ = calculate_hourly_counts(df, part_number, target_time_col, start_date, end_date)
     hourly_counts_of_reception, delivery_info, reception_times = calculate_hourly_counts(df, part_number, reception_time_col, start_date, end_date)
 
-    # 非稼動日時間をの取り除いて、発注〜入庫LT、検収〜入庫LT（日単位）の中央値を計算。これを時間遅れ計算のベースとする
+    # 非稼動日時間をの取り除いて、発注〜入庫LT、検収〜入庫LT（日単位）の中央値を計算。
+    # 時間遅れ計算のベースとする
     median_lt_order, median_lt_reception = calculate_median_lt(part_number,df)
     
-    # 発注日時は2山ある。発注して4日後に納入せよとかある、土日のせい？
+    # 発注日時は2山ある。発注して4日後に納入せよとかある、土日の影響？（要確認）
     # 発注かんばん数の最適な影響時間範囲を見つける
-    min_lag =int(median_lt_order * 24)-4  # ここで最小遅れ時間を設定
-    max_lag =int(median_lt_order * 24)+4  # ここで最大遅れ時間を設定
+    min_lag =int(median_lt_order * 24)-4  # LT中央値を基準に最小遅れ時間を設定
+    max_lag =int(median_lt_order * 24)+4  # LT中央値を基準に最大遅れ時間を設定
     best_corr_order, best_range_start_order, best_range_end_order = find_best_lag_range(hourly_counts_of_order, hourly_counts_of_in, min_lag, max_lag, '発注かんばん数')
+
+    # 検収スタンプは伝票単位＆リアルタイムではないため、信用できない
+    # 検収かんばん数の最適な影響時間範囲を見つける
+    min_lag = int(median_lt_reception * 24)-4  # LT中央値を基準に最小遅れ時間を設定
+    max_lag = int(median_lt_reception * 24)+4  # LT中央値を基準に最大遅れ時間を設定
+    best_corr_reception, best_range_start_reception, best_range_end_reception = find_best_lag_range(hourly_counts_of_reception, hourly_counts_of_in, min_lag, max_lag, '納入かんばん数')
+    
+    # 確認用
     #print(f"Best range for 発注: {best_range_start_order}時間前から{best_range_end_order}時間前まで")
     #print(f"Best correlation for 発注: {best_corr_order}")
-
-    # 検収かんばん数の最適な影響時間範囲を見つける
     #print(f"検収〜入庫LT中央値：{median_lt_reception}日,検収〜入庫時間中央値：{median_lt_reception*24}時間")
-    min_lag = int(median_lt_reception * 24)-4  # ここで最小遅れ時間を設定
-    max_lag = int(median_lt_reception * 24)+4  # ここで最大遅れ時間を設定
-    best_corr_reception, best_range_start_reception, best_range_end_reception = find_best_lag_range(hourly_counts_of_reception, hourly_counts_of_in, min_lag, max_lag, '納入かんばん数')
     #print(f"Best range for 検収: {best_range_start_reception}時間前から{best_range_end_reception}時間前まで")
     #print(f"Best correlation for 検収: {best_corr_reception}")
 
@@ -180,152 +201,102 @@ for part_number in [product]:#unique_hinban_list:
     lagged_features_order = create_lagged_features(hourly_counts_of_order, hourly_counts_of_in, hourly_counts_of_out, best_range_start_order, best_range_end_order, '発注かんばん数', delivery_info, reception_times)
     lagged_features_reception = create_lagged_features(hourly_counts_of_reception, hourly_counts_of_in, hourly_counts_of_out, best_range_start_reception, best_range_end_reception, '納入かんばん数', delivery_info, reception_times)
 
+    # 前処理
     # 重複のあるtarget 列を削除
     lagged_features_reception = lagged_features_reception.drop(columns=['入庫かんばん数（t）'])
     lagged_features_reception = lagged_features_reception.drop(columns=['出庫かんばん数（t）'])
-    # 合体
+    # lagged_features作成
+    # 最適な影響時間範囲に基づいた発注かんばん数と、検収かんばん数を統合
     lagged_features = lagged_features_order.join(lagged_features_reception, how='outer')
 
-    #在庫増減数を計算
-    lagged_features['在庫増減数(t)'] = lagged_features['入庫かんばん数（t）'] - lagged_features['出庫かんばん数（t）']
-
-    # columns_printは'発注かんばん'を含む列名
-    columns_order = find_columns_with_word_in_name(lagged_features, '発注かんばん')
-    # columns_printは'発注かんばん'を含む列名
-    columns_reception = find_columns_with_word_in_name(lagged_features, '納入かんばん')
-    lagged_features['納入フレ（負は未納や正は挽回納入数を表す）'] = lagged_features[columns_reception] - lagged_features[columns_order]
-
-    #発注かんばん数(t)、納入かんばん数(t)を計算
-    lagged_features['発注かんばん数(t)'] = hourly_counts_of_order
-    lagged_features['納入かんばん数(t)'] = hourly_counts_of_reception
-
-    # lagged_features に品番と仕入先名を追加
-    lagged_features = add_part_supplier_info(df, lagged_features, part_number)
+    #lagged_featuresに情報追加
+    lagged_features['在庫増減数(t)'] = lagged_features['入庫かんばん数（t）'] - lagged_features['出庫かんばん数（t）']#在庫増減数を計算
+    lagged_features['発注かんばん数(t)'] = hourly_counts_of_order#発注かんばん数(t)を計算
+    lagged_features['納入かんばん数(t)'] = hourly_counts_of_reception#納入かんばん数(t)を計算
+    lagged_features = add_part_supplier_info(df, lagged_features, part_number)#品番と仕入先名を追加
     lagged_features = lagged_features.rename(columns={'仕入先工場名': '発送場所名'})
-
-    # 過去の出庫からの経過時間を計算
-    lagged_features, median_interval = calculate_elapsed_time_since_last_dispatch(lagged_features)
-
-    #自動ラック在庫結合
-    lagged_features = pd.merge(lagged_features, df2[['日時', '品番','在庫数（箱）']], on=['品番', '日時'], how='left')
+    lagged_features, median_interval = calculate_elapsed_time_since_last_dispatch(lagged_features)# 過去の出庫からの経過時間を計算
+    lagged_features = pd.merge(lagged_features, df2[['日時', '品番','在庫数（箱）']], on=['品番', '日時'], how='left')#自動ラック在庫結合
+    lagged_features = pd.merge(lagged_features, merged_data_for_robot_and_maguchi, on=['日時'], how='left')#1時間ああたりの間口別在庫の計算
+    # lagged_features の各列の型をチェックして、適切な値で NaN を置き換える
+    for col in lagged_features.columns:
+        if pd.api.types.is_timedelta64_dtype(lagged_features[col]):
+            lagged_features[col] = lagged_features[col].fillna(pd.Timedelta(0))
+        else:
+            lagged_features[col] = lagged_features[col].fillna(0)
+    lagged_features = process_shiresakibin_flag(lagged_features, arrival_times_df)#仕入先便到着フラグ計算
+    lagged_features = pd.merge(lagged_features,kumitate_data[['日時','生産台数_加重平均済','計画生産台数_加重平均済','計画達成率_加重平均済']], on='日時', how='left')# lagged_features と kumitate_data を日時でマージ
     
-    merged_data_for_robot_and_maguchi['日時'] = pd.to_datetime(merged_data_for_robot_and_maguchi['日時'])
-    lagged_features = pd.merge(lagged_features, merged_data_for_robot_and_maguchi, on=['日時'], how='left')
+    #timelag = int((best_range_start_order + best_range_end_order)/2)#最適な発注かんばん数の幅
+    #timelag12 = int((best_range_start_reception + best_range_end_reception)/2)#最適な納入かんばん数の幅
+    
+    best_range_order = int((best_range_start_order + best_range_end_order)/2)#最適な発注かんばん数の幅
+    best_range_reception = int((best_range_start_reception + best_range_end_reception)/2)#最適な納入かんばん数の幅
+    
+    #定期便
+    lagged_features = pd.merge(lagged_features, teikibin_df[['日時', '荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)']], on='日時', how='left')
+    #特徴量エンジニアリング
+    lagged_features = feature_engineering(lagged_features)
 
-    lagged_features = lagged_features.fillna(0)  # NaNを0に置き換え
-
-    #平均納入時間がtimedelta64[ns]の型になっている。0days 00:00:00みたいな形
-    #print(lagged_features.dtypes)
-
-    # arrival_times_dfの仕入先名が一致する行を抽出
-    # 仕入先名と発送場所名が一致する行を抽出
-    matched_arrival_times_df = arrival_times_df[
-        (arrival_times_df['仕入先名'].isin(lagged_features['仕入先名'])) &
-        (arrival_times_df['発送場所名'].isin(lagged_features['発送場所名']))
-    ]
-
-    # arrival_times_dfの仕入先名列をlagged_featuresに結合
-    lagged_features2 = lagged_features.merge(matched_arrival_times_df, on=['仕入先名','発送場所名'], how='left')
-
-
-    # '納入便'を含む列名を見つける
-    # columns_delivery_numは'納入便'を含む列名
-    columns_delibery_num = find_columns_with_word_in_name(lagged_features2, '納入便')
-
-    # 納入便がつく列をint型に変換
-    lagged_features2[columns_delibery_num] = pd.to_numeric(lagged_features2[columns_delibery_num], errors='coerce').fillna(0).astype(int)
-
-    # '平均納入時間' を含む列名を見つける
-    # columns_delibery_timesは'平均納入時間' を含む列名
-    columns_delibery_times = find_columns_with_word_in_name(lagged_features2, '平均納入時間')
-    # 納入便の列に基づいて対応する「早着」「定刻」「遅着」の情報を追加
-    lagged_features2['早着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_早着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
-    lagged_features2['定刻'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_定刻'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
-    lagged_features2['遅着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_遅着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
-
-    # timedelta形式に変換
-    lagged_features2[columns_delibery_times] = pd.to_timedelta(lagged_features2[columns_delibery_times])
-
-    # 変換を適用
-    lagged_features2[columns_delibery_times] = lagged_features2[columns_delibery_times].apply(timedelta_to_hhmmss)
-
-    # 新しい列を追加し、条件に基づいて「仕入先便到着フラグ」を設定
-    lagged_features2['仕入先便到着フラグ'] = lagged_features2.apply(set_arrival_flag, columns_delibery_num=columns_delibery_num,columns_delibery_times=columns_delibery_times, axis=1)
-
-    # 特定の文字列を含む列を削除する
-    lagged_features2 = drop_columns_with_word(lagged_features2, '早着')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '定刻')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '遅着')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '受入')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '平均納入時間')
-
-    timelag = int((best_range_start_order + best_range_end_order)/2)
-    timelag2 = int((best_range_start_reception + best_range_end_reception)/2)
-
-    # lagged_features2 と kumitate_data を日時でマージ
-    kumitate_data['日時'] = pd.to_datetime(kumitate_data['日時'], errors='coerce')
-    lagged_features3 = pd.merge(lagged_features2, kumitate_data[['日時', '生産台数_加重平均済','計画生産台数_加重平均済','計画達成率_加重平均済']], on='日時', how='left')
-
-    # 影響のある生産台数を計算
-    #lagged_features3 = calculate_window_width(lagged_features3, median_interval,0,timelag)
-
+    #ローリング特徴量
     #解析窓で計算
-    lagged_features3 = calculate_window_width(lagged_features3, best_range_end_order, 0, timelag, timelag2)
+    lagged_features = calculate_window_width(lagged_features, best_range_end_order, 0, best_range_order, best_range_reception)
 
     # 不要な列を削除
-    #lagged_features3 = lagged_features3.drop(['生産台数_加重平均済','生産台数_加重平均済'],axis=1)
+    #lagged_features = lagged_features.drop(['生産台数_加重平均済','生産台数_加重平均済'],axis=1)
 
     # NaN値を処理する（例: 0で埋める）
-    lagged_features3 = lagged_features3.fillna(0)
+    lagged_features = lagged_features.fillna(0)
     
-    lagged_features3 = pd.merge(lagged_features3, teikibin_df[['日時', '荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)']], on='日時', how='left')
     
     # columns_printは'発行かんばん'を含む列名
-    columns_enter = find_columns_with_word_in_name(lagged_features3, '入庫かんばん数（t-0~')
-    lagged_features3['部品置き場からの投入'] = lagged_features3[columns_enter] - lagged_features3[f'発注かんばん数（t-{timelag}~t-{timelag*2}）']
+    columns_enter = find_columns_with_word_in_name(lagged_features, '入庫かんばん数（t-0~')
+    lagged_features['部品置き場からの投入'] = lagged_features[columns_enter] - lagged_features[f'発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）']
+    # columns_printは'発注かんばん'を含む列名
+    columns_order = find_columns_with_word_in_name(lagged_features, '発注かんばん数（t-')
+    # columns_printは'発注かんばん'を含む列名
+    columns_reception = find_columns_with_word_in_name(lagged_features, '納入かんばん数（t-')
+    lagged_features['納入フレ（負は未納や正は挽回納入数を表す）'] = lagged_features[columns_reception] - lagged_features[columns_order]
+    
 
     #------------------------------------------------------------------------------------------------------------------
     #削除、今は24年度のデータがないから
     start = '2023-12-30'
     end = '2024-03-31'
     # 日付範囲に基づいてフィルタリングして削除
-    lagged_features3= lagged_features3[~((lagged_features3['日時'] >= start) & (lagged_features3['日時'] <= end))]
+    lagged_features= lagged_features[~((lagged_features['日時'] >= start) & (lagged_features['日時'] <= end))]
     #------------------------------------------------------------------------------------------------------------------
 
-    data = lagged_features3.iloc[300:]#遅れ分削除
+    data_temp = lagged_features#遅れ分削除
+    data = data_temp.iloc[300:]#遅れ分削除
     end_hours_ago = 0
-    reception_timelag = timelag2
+    reception_timelag = best_range_reception
     #data['差分']=data[f'発注かんばん数（t-{timelag}~t-{timelag*2}）']-data[f'納入かんばん数（t-{reception_timelag}~t-{timelag+reception_timelag}）']
     # 説明変数の定義
-    X = data[[f'発注かんばん数（t-{timelag}~t-{timelag*2}）',f'計画生産台数_加重平均（t-{end_hours_ago}~t-{timelag}）',f'計画達成率_加重平均（t-{end_hours_ago}~t-{timelag}）',
-              '納入フレ（負は未納や正は挽回納入数を表す）','部品置き場からの投入','仕入先便到着フラグ','荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
-              '在庫数（箱）合計_A1','在庫数（箱）合計_A2', '在庫数（箱）合計_B1', '在庫数（箱）合計_B2','在庫数（箱）合計_B3', '在庫数（箱）合計_B4']]
+    X = data[[f'発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）',f'計画生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）',f'計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）','部品置き場からの投入',
+              '納入フレ（負は未納や正は挽回納入数を表す）','仕入先便到着フラグ','荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
+              f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',f'定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）']]
     # 目的変数の定義
-    #y = data[f'在庫増減数（t-0~t-{timelag}）']
-    y = data[f'在庫増減数(t)']
+    #★
+    y = data[f'在庫増減数（t-0~t-{best_range_order}）']
+    #y = data[f'在庫増減数(t)']
 
     # データを学習データとテストデータに分割
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    #--------------------------------------------------------------------------------------------------------
 
     # Lasso回帰モデルの作成
     ridge = Ridge(alpha=0.1)
-
     # モデルの訓練
     ridge.fit(X_train, y_train)
-
     # 予測
     y_pred_train = ridge.predict(X_train)
     y_pred_test = ridge.predict(X_test)
-
     # 評価
     mse_train = mean_squared_error(y_train, y_pred_train)
     mse_test = mean_squared_error(y_test, y_pred_test)
-
     max_error_train = max_error(y_train, y_pred_train)
     max_error_test = max_error(y_test, y_pred_test)
-
     # マイナス方向の最大誤差を計算
     min_error_train = np.min(y_train - y_pred_train)
     min_error_test = np.min(y_test - y_pred_test)
@@ -360,9 +331,9 @@ for part_number in [product]:#unique_hinban_list:
     print(f'ランダムフォレスト - テストデータの平均誤差: {mae2}')
     #--------------------------------------------------------------------------------------------------------
     
-    unique_hinban_list = lagged_features3['仕入先名'].unique()
+    unique_hinban_list = lagged_features['仕入先名'].unique()
     supply = str(unique_hinban_list[0])
-    zaikozaiko = lagged_features3['在庫数（箱）'].mean()
+    zaikozaiko = lagged_features['在庫数（箱）'].mean()
     
     # 結果をデータフレームに追加
     results_df = results_df.append({'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test,
@@ -370,46 +341,98 @@ for part_number in [product]:#unique_hinban_list:
                                     
     print("終了")
 
-# 結果を表示
-# 日付をindexに設定表示のため一時的に日付をindexに設定
-#lagged_features3 = lagged_features3.set_index('日時')
-# データフレームの各列の型を確認する
-#print(lagged_features3.dtypes)
-# 特定の日付範囲を指定
-#temp_start_date = '2023-10-11'
-#temp_end_date = '2024-01-04'
-# 日付範囲でフィルタリング
-#specific_date_range = lagged_features3[(lagged_features3.index >= temp_start_date) & (lagged_features3.index <= temp_end_date)]
-# フィルタリングされたデータを表示
-#specific_date_range = specific_date_range.reset_index()
-#lagged_features3 = lagged_features3.reset_index()
-#specific_date_range.head(10)
-
 # データフレームXから100行目から300行目までのデータを選択
-X_subset = X.iloc[0:5000]
+#X_subset = X.iloc[0:3000]
 # モデルを使ってX_subsetから予測値を計算
-y_pred_subset = rf_model.predict(X_subset)
+#y_pred_subset = rf_model.predict(X_subset)
 # y_test_subset を用意する必要がある
 # この例では単に y_test の対応する部分を選択することを仮定
-y_test_subset = y_test.loc[X_subset.index]
+#y_test_subset = y_test.loc[X_subset.index]
+
+#インデックスが300スタートなのでリセット
+data = data.reset_index(drop=True)
+
+# サイドバーで開始日と終了日を選択
+st.sidebar.header("在庫推移可視化")
+
+# データの最小日時と最大日時を取得
+min_datetime = data['日時'].min()
+max_datetime = data['日時'].max()
+
+print(min_datetime,max_datetime)
+
+default_values = {
+    'start_date': min_datetime.date(),
+    'end_date': max_datetime.date(),
+    'start_time': datetime.strptime("00:00", "%H:%M").time(),  # 0:00として初期化
+    'end_time': datetime.strptime("23:00", "%H:%M").time(),  # 23:00として初期化
+    'button_clicked': False
+}
+
+for key, value in default_values.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+# サイドバーにフォームの作成
+with st.sidebar.form(key='filter_form'):
+    st.session_state.start_date = st.date_input("開始日", st.session_state.start_date)
+    st.session_state.end_date = st.date_input("終了日", st.session_state.end_date)
+    start_time_hours = st.slider("開始時間", 0, 23, st.session_state.start_time.hour, format="%02d:00")
+    end_time_hours = st.slider("終了時間", 0, 23, st.session_state.end_time.hour, format="%02d:00")
+    
+    # 時間を更新
+    st.session_state.start_time = time(start_time_hours, 0)
+    st.session_state.end_time = time(end_time_hours, 0)
+    
+    # フォームの送信ボタン
+    submit_button = st.form_submit_button(label='適用')
+
+    if submit_button:
+        st.session_state.button_clicked = True
+
+# フォームが送信された場合の処理
+if submit_button:
+    st.session_state.button_clicked = True
+
+# ボタンが押された場合のみ処理を実行
+if st.session_state.button_clicked:
+    # 開始日時と終了日時を結合
+    start_datetime = datetime.combine(st.session_state.start_date, st.session_state.start_time)
+    end_datetime = datetime.combine(st.session_state.end_date, st.session_state.end_time)
+
+    # start_datetimeとend_datetimeに対応するインデックスを見つける
+    start_index = data.index[data['日時'] == start_datetime].tolist()
+    end_index = data.index[data['日時'] == end_datetime].tolist()
+
+    st.write(f"開始日時: {start_datetime}, インデックス: {start_index}")
+    st.write(f"終了日時: {end_datetime}, インデックス: {end_index}")
+else:
+    st.write("開始日、終了日、開始時間、終了時間を選択し、実行ボタンを押してください。")
+    
+    
 # SHAP計算
 explainer = shap.TreeExplainer(rf_model, feature_dependence='tree_path_dependent', model_output='margin')
-shap_values_subset = explainer.shap_values(X_subset)
+shap_values = explainer.shap_values(X)
 
-# 図の作成
-plt.figure(figsize=(25, 10))
+first_datetime_df = data['日時'].iloc[0]
+print(f"dataの日時列の最初の値: {first_datetime_df}")
 
-start = 0
-end = 2999
+# リストから整数に変換
+start_index_int = start_index[0]#-300
+end_index_int = end_index[0]#-300
 
-#df= data[data['品番'] == '019128GA010']
-#data = lagged_features3
-df = data.iloc[start:end]
+#start = start_index_int#0#0
+#end = end_index_int#2999
+
+df = data.iloc[start_index_int:end_index_int]
 print(df.head())
 
-X_subset = X.iloc[start:end]
+first_datetime_df = df.iloc[0]
+print(f"dfの日時列の最初の値: {first_datetime_df}")
+
+#X_subset = X.iloc[start:end]
 # モデルを使ってX_subsetから予測値を計算
-y_pred_subset = rf_model.predict(X_subset)
+#y_pred_subset = rf_model.predict(X_subset)
 
 df['日時'] = pd.to_datetime(df['日時'])
 df.set_index('日時', inplace=True)
@@ -418,41 +441,15 @@ df.set_index('日時', inplace=True)
 df2 = df['在庫数（箱）']
 print(df2.head())
 
-# プロットするデータの範囲を指定（例：最初の30個のデータを表示）
-start_idx =900
-end_idx =950
+#在庫数（箱）を計算する
+#yyyy = df[f'在庫数（箱）（t-{best_range_order}）']
+#y_base_subset = yyyy[start_idx:end_idx]
 
-# プロットするデータの範囲をスライス
-df2_subset = df2[start_idx:end_idx]
-y_pred_subset = y_pred_subset[start_idx:end_idx]
-#-----------------------------------------------------------------------
-yyyy = df[f'在庫数（箱）（t-{timelag}）']
-y_base_subset = yyyy[start_idx:end_idx]
-#y_base_subset = df['在庫増減数(t)'].shift(1)
-#-----------------------------------------------------------------------
-
-print("df2",len(df2))
-print("df2_subset",len(df2_subset))
-print("y_pred_subset",len(y_pred_subset))
-
-# 折れ線グラフのサブプロット
-plt.subplot(2, 1, 1) # (rows, columns, subplot number)
-plt.plot(df2_subset.index, df2_subset,  linestyle='-', color='red',label='Actual')
-plt.plot(df2_subset.index, y_pred_subset+y_base_subset, linestyle='-', color='blue', label='Predicted')
-#plt.title('順立装置内の在庫推移（品番：82824ECE010、品名：CONNECTOR, WIRING HARNESS）')
-# データの平均値を計算
-mean_value = y.mean()
-# 平均線の追加
-plt.axhline(y=mean_value, color='black', linestyle='--', label=f'Average: {mean_value:.2f}')
-plt.legend()  # 凡例の表示
-plt.xticks(ticks=df2_subset.index, labels=df2_subset.index.strftime('%Y-%m-%d-%H'), rotation=90)  # 日付フォーマットは必要に応じて調整
-plt.title('順立装置内の在庫増減数（品番：9010512A018)')
-plt.tight_layout()
-
-#--------------------------------------------------------------------------
+#在庫増減数の平均値を確認用
+#mean_value = y.mean()
 
 # SHAP値からデータフレームを作成
-shap_df = pd.DataFrame(shap_values_subset, columns=X.columns)
+shap_df = pd.DataFrame(shap_values, columns=X.columns)
 
 # データフレームの平均SHAP値に基づいて特徴量を並び替え
 shap_df_mean = shap_df.abs().mean().sort_values(ascending=False)
@@ -460,124 +457,80 @@ sorted_columns = shap_df_mean.index
 
 shap_df_sorted = shap_df[sorted_columns]
 
-dfdf = shap_df_sorted.iloc[start:end].T
+dfdf = shap_df_sorted.iloc[start_index_int:end_index_int].T
 
 # プロットするデータの範囲をスライス
-dfdf_subset = dfdf.iloc[:, start_idx:end_idx]
-
-print("shap_df",len(shap_df))
-print("shap_df_sortedt",len(shap_df_sorted))
-print("dfdf",len(dfdf))
-print("dfdf_subset",len(dfdf_subset))
+dfdf_subset = dfdf#.iloc[:, start_idx:end_idx]
 
 dfdf_subset2 = dfdf_subset
 
-# y_base_subset の値で dfdf_subset の各列を割る
-#for i, col in enumerate(dfdf_subset.columns):
-    #if y_base_subset.iloc[i] == 0:
-        #y_base_subset2.iloc[i] = dfdf_subset[col]
-    #else:
-        #dfdf_subset2[col] = dfdf_subset[col] / y_base_subset.iloc[i]
-    
-# データフレームの最小値と最大値を取得
-#vmin = dfdf_subset2.min().min()
-#vmax = dfdf_subset2.max().max()
-    
-# カラーマップ（ヒートマップ）のサブプロット
-plt.subplot(2, 1, 2)
-sns.heatmap(dfdf_subset2, cmap='bwr', cbar=True, center=0)#, vmin=vmin, vmax=vmax) # Transpose the DataFrame
-plt.title('寄与度カラーマップ ')
-plt.xticks(np.arange(0.5, len(df2_subset.index)), df2_subset.index.strftime('%Y-%m-%d-%H'), rotation=90)
-# 各セルに値を追記
-X = X.reindex(columns=shap_df_sorted.columns)
-XX = X[start:end].T
-XX_subset = XX.iloc[:, start_idx:end_idx]
-
-for i in range(XX_subset.shape[0]):
-    for j in range(XX_subset.shape[1]):
-        formatted_value = "{:.1f}".format(XX_subset.iloc[i, j])
-        text = plt.text(j+0.5, i+0.5, formatted_value,
-                       ha="center", va="center", color="black")
-plt.tight_layout()
-
-filename = 'モ'+ '.png'
-plt.savefig(filename)
+# 前の値との差分を計算
+# 差分と差分判定をfor文で計算
+#difference = [None]  # 最初の差分はなし
+#for i in range(1,len(df2_subset)):
+#    diff = df2_subset.iloc[i] - df2_subset.iloc[i-1]
+#    difference.append(diff)
+#    if i < len(dfdf_subset2):
+#        if diff > 0:
+#            dfdf_subset2.iloc[i] = dfdf_subset2.iloc[i]
+#        elif diff < 0:
+#            dfdf_subset2.iloc[i] = -1*dfdf_subset2.iloc[i]
 
 #--------------------------------------------------------------------------------------------
 
 df = dfdf_subset2
 
+# dfの列数とdf2_subsetのインデックス数を確認
+print(f"data index: {len(data)}")
+print(f"df columns: {len(df.columns)}")
+#print(f"df2_subset index: {len(df2_subset.index)}")
+print(f"shap_df_sorted index: {len(shap_df_sorted)}")
+print(f"dfdf index: {len(dfdf)}")
+print(f"dfdf_subset2 index: {len(dfdf_subset2)}")
+
+
 # カラーマップの選択
 cmap = 'RdBu_r'  # 青から赤に変化するカラーマップ
 
-# カラーマップの表示ボタン
-if st.button("結果を表示"):
-    st.session_state['button_clicked'] = True
-    
-if st.button("リセット"):
-    st.session_state['button_clicked'] = False
+#df2_subset.index = df2_subset.index.strftime('%Y-%m-%d-%H')
+df.columns = df2.index.strftime('%Y-%m-%d-%H')
 
-# カラーマップの表示処理
-if st.session_state['button_clicked']:
-    try:
-        
-        #df2_subset.index = df2_subset.index.strftime('%Y-%m-%d-%H')
-        df.columns = df2_subset.index.strftime('%Y-%m-%d-%H')
-        
-        # 折れ線グラフの表示
-        fig_line = go.Figure()
-        fig_line.add_trace(go.Scatter(
-            x=df2_subset.index.strftime('%Y-%m-%d-%H'),
-            y=df2_subset,
-            mode='lines+markers',
-            name='実績'
-        ))
-        
-        
-        # 2つ目の折れ線グラフ
-        fig_line.add_trace(go.Scatter(
-            x=df2_subset.index.strftime('%Y-%m-%d-%H'),
-            #y=y_pred_subset+y_base_subset,
-            y=y_pred_subset+df2_subset.shift(1),
-            mode='lines+markers',
-            name='AI推定値'
-        ))
-        
-        fig_line.update_layout(
-            title='在庫推移',
-            yaxis_title='在庫数（箱）'
-        )
-        
-        # 行の並びを反転
-        df_reversed = df.iloc[::-1]
+#行の並びを反転
+df_reversed = df.iloc[::-1]
 
-        # ヒートマップの表示
-        fig_heatmap = go.Figure(data=go.Heatmap(
-            z=df_reversed.values,
-            x=df_reversed.columns,
-            y=df_reversed.index,
-            colorscale=cmap,
-            zmid=0,  # 0を中心にする
-            colorbar=dict(title="影響度")  # カラーバーにタイトルを付ける
-        ))
+# インデックスをリセット
+df2_subset_df = df2.to_frame().reset_index()
 
-        fig_heatmap.update_layout(
-            title='変動要因'
-        )
+# データフレームの行と列を入れ替え
+df_transposed = df.transpose()
+# インデックスをリセットして日時列を作成
+df_transposed.reset_index(inplace=True)
+# インデックス列の名前を '日時' に変更
+df_transposed.rename(columns={'index': '日時'}, inplace=True)
 
-        
-        #print(df2_subset.index)
-        #print(np.arange(len(df2_subset.index)))
-        #print(df2_subset.index.strftime('%Y-%m-%d-%H'))
-        #print(tickvals)
-        
-        st.plotly_chart(fig_line)
-        st.plotly_chart(fig_heatmap)
-        
-    except Exception as e:
-        st.error(f"エラーが発生しました: {e}")
-    
-print(y_base_subset)
-print(y_pred_subset)
+#説明変数
+zzz = X.iloc[start_index_int:end_index_int]#[start_idx:end_idx]
+# インデックスをリセット
+zzz = zzz.reset_index(drop=True)
+#日時列
+temp_time = df_transposed.reset_index(drop=True)
 
+first_datetime_df1 = data['日時'].iloc[0]
+first_datetime_df2 = temp_time['日時'].iloc[0]
+first_datetime_df3 = df_transposed['日時'].iloc[0]
+print(f"dataの日時列の最初の値: {first_datetime_df1}")
+print(f"df_transposedの日時列の最初の値: {first_datetime_df3}")
+print(f"temp_timeの日時列の最初の値: {first_datetime_df2}")
+
+# data1とdata2を結合
+merged_df = pd.concat([temp_time[['日時']], zzz], axis=1)
+
+# 関数を呼び出して表示
+display_data_app(df2_subset_df, df_transposed, merged_df)
+
+# 全体SHAPプロットの生成
+#fig, ax = plt.subplots()
+#shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
+# プロットをStreamlitで表示
+#st.pyplot(fig)
 
