@@ -1,7 +1,7 @@
 # app.py
 import streamlit as st
 import pandas as pd
-import analysis_v2 # analysis_v1.pyが同じディレクトリにある前提
+import analysis_v2 # analysis_v2.pyが同じディレクトリにある前提
 import sys
 from datetime import datetime, time as dt_time
 import pickle
@@ -65,9 +65,9 @@ def analysis_page():
     step1_flag, step2_flag, step3_flag = load_flag()
     
     # 確認用
-    st.sidebar.info(f"{step1_flag}")
-    st.sidebar.info(f"{step2_flag}")
-    st.sidebar.info(f"{step3_flag}")
+    #st.sidebar.info(f"{step1_flag}")
+    #st.sidebar.info(f"{step2_flag}")
+    #st.sidebar.info(f"{step3_flag}")
 
     st.sidebar.title("STEP1：データ選択")
 
@@ -75,8 +75,9 @@ def analysis_page():
     with st.sidebar.form(key='my_form'):
     
         #---<ToDo>---
-        #変更ふ必要
-        file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+        #変更必要
+        #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'#こっちは文字化けでエラーになる
+        file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
         df = pd.read_csv(file_path, encoding='shift_jis')
 
         # 品番リスト
@@ -185,7 +186,6 @@ def analysis_page():
             st.sidebar.error("非稼動日を選択しています。")
             step2_flag = 2
             
-            
         else:
             st.sidebar.info(f"開始日時: {start_datetime}, インデックス: {start_index}")
             st.sidebar.info(f"終了日時: {end_datetime}, インデックス: {end_index}")
@@ -194,7 +194,6 @@ def analysis_page():
 
             # モデルとデータを保存
             save_flag(step1_flag, step2_flag, step3_flag)
-            
             
     else:
 

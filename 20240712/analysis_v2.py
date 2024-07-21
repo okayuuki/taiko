@@ -103,7 +103,7 @@ def show_analysis(product):
     #確認項目
     #日付にダブりがないか
 
-    file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+    file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
     df = pd.read_csv(file_path, encoding='shift_jis')
     # 品番列の空白を削除
     df['品番'] = df['品番'].str.strip()
@@ -335,10 +335,14 @@ def show_analysis(product):
         supply = str(unique_hinban_list[0])
         zaikozaiko = lagged_features['在庫数（箱）'].mean()
         
+        #appendメソッドはpandasの最新バージョンでは廃止
         # 結果をデータフレームに追加
-        results_df = results_df.append({'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test,
-                                        'ランダムフォレストの平均誤差': mae2, 'ランダムフォレストのマイナス方向の最大誤差': min_err, 'ランダムフォレストのプラス方向の最大誤差': max_err}, ignore_index=True)
-                                        
+        #results_df = results_df.append({'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test,
+                                        #'ランダムフォレストの平均誤差': mae2, 'ランダムフォレストのマイナス方向の最大誤差': min_err, 'ランダムフォレストのプラス方向の最大誤差': max_err}, ignore_index=True)
+
+        new_row = pd.DataFrame([{'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test}])
+        results_df = pd.concat([results_df, new_row], ignore_index=True)
+
         print("終了")
         
         # CSVファイルに保存
@@ -379,7 +383,8 @@ def step2(data, rf_model, X, start_index, end_index):
     #start_index, end_index = visualize_stock_trend(data)#在庫可視化
 
     # SHAP計算
-    explainer = shap.TreeExplainer(rf_model, feature_dependence='tree_path_dependent', model_output='margin')
+    #explainer = shap.TreeExplainer(rf_model, feature_dependence='tree_path_dependent', model_output='margin')
+    explainer = shap.TreeExplainer(rf_model, model_output='raw')
     shap_values = explainer.shap_values(X)
 
     first_datetime_df = data['日時'].iloc[0]
@@ -593,7 +598,8 @@ def step3(bar_df, df2, selected_datetime):
         # ホバーデータに追加の情報を含める
         hover_data = {}
         for i, row in filtered_df2.iterrows():
-            for idx, value in row.iteritems():
+            for idx, value in row.items():#iteritemsは、pandasのSeriesではitemsに名称が変更
+            #for idx, value in row.iteritems():
                 if idx != '日時':
                     hover_data[idx] = f"<b>日時:</b> {row['日時']}<br><b>{idx}:</b> {value:.2f}<br>"
 
