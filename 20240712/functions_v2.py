@@ -32,6 +32,23 @@ from sklearn.metrics import mean_squared_error, max_error, mean_absolute_error
 from datetime import datetime, time as dt_time
 import sys
 
+def display_corr_matrix(df):
+
+    # 特定の名前を含む列を削除
+    columns_to_drop = [col for col in df.columns if '在庫数' in col or  '（t）' in col]
+    df = df.drop(columns=columns_to_drop)
+
+    # 数値データのみを抽出
+    numeric_df = df.select_dtypes(include=[np.number])
+
+    # 相関カラーマップの表示
+    st.subheader('相関カラーマップ')
+    corr_matrix = numeric_df.corr()
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.1f', ax=ax)
+    st.pyplot(fig)
+
 # 非稼動日の時間を削除する関数
 # 土曜日9時から月曜7時までの時間を除外
 # is_excluded_time関数がFalseを返す日時だけを残します
@@ -419,21 +436,28 @@ def drop_columns_with_word(df, word):
     columns_to_drop = [column for column in df.columns if word in column]
     return df.drop(columns=columns_to_drop)
 
+#特徴量エンジニアリング
 def feature_engineering(df):
     # 新しい '荷役時間' 列を計算
     df['荷役時間'] = df['荷役時間(t-4)'] + df['荷役時間(t-5)'] + df['荷役時間(t-6)']
+    #df = df.drop(columns=['荷役時間(t-4)'])
+    #df = df.drop(columns=['荷役時間(t-5)'])
+    #df = df.drop(columns=['荷役時間(t-6)'])
     
     # 新しい列を初期化
-    df['部品置き場からの入庫'] = 0
-    df['部品置き場で滞留'] = 0
+    df['部品置き場の入庫滞留状況'] = 0
+    #df['部品置き場からの入庫'] = 0
+    #df['部品置き場で滞留'] = 0
     df['定期便にモノ無し'] = 0
     
     # 条件ロジックを適用
     for index, row in df.iterrows():
         if row['荷役時間'] == 0 and row['入庫かんばん数（t）'] > 0:
-            df.at[index, '部品置き場からの入庫'] = 1#row['入庫かんばん数（t）']
+            df.at[index, '部品置き場の入庫滞留状況'] = 1
+            #df.at[index, '部品置き場からの入庫'] = 1#row['入庫かんばん数（t）']
         elif row['荷役時間'] > 0 and row['入庫かんばん数（t）'] == 0:
-            df.at[index, '部品置き場で滞留'] = 1
+            df.at[index, '部品置き場の入庫滞留状況'] = 0
+            #df.at[index, '部品置き場で滞留'] = 1
             df.at[index, '定期便にモノ無し'] = 1
     
     return df
@@ -452,11 +476,11 @@ def calculate_window_width(data, start_hours_ago, end_hours_ago, timelag, recept
     # 出庫かんばん数の合計を計算
     data[f'出庫かんばん数（t-{end_hours_ago}~t-{timelag}）'] = data['出庫かんばん数（t）'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
     # 在庫増減数の合計を計算
-    data[f'在庫増減数（t-{end_hours_ago}~t-{timelag}）'] = data['在庫増減数(t)'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
+    data[f'在庫増減数（t-{end_hours_ago}~t-{timelag}）'] = data['在庫増減数（t）'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
     # 発注かんばん数の合計を計算
-    data[f'発注かんばん数（t-{timelag}~t-{timelag*2}）'] = data['発注かんばん数(t)'].rolling(window=timelag+1, min_periods=1).sum().shift(timelag)
+    data[f'発注かんばん数（t-{timelag}~t-{timelag*2}）'] = data['発注かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(timelag)
     # 納入かんばん数の合計を計算
-    data[f'納入かんばん数（t-{reception_timelag}~t-{timelag+reception_timelag}）'] = data['納入かんばん数(t)'].rolling(window=timelag+1, min_periods=1).sum().shift(timelag)
+    data[f'納入かんばん数（t-{reception_timelag}~t-{timelag+reception_timelag}）'] = data['納入かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(timelag)
     # 在庫数（箱）のシフト
     data[f'在庫数（箱）（t-{timelag}）'] = data['在庫数（箱）'].shift(timelag)
     
@@ -466,9 +490,11 @@ def calculate_window_width(data, start_hours_ago, end_hours_ago, timelag, recept
     data[f'間口_B2の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B2'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
     data[f'間口_B3の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B3'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
     data[f'間口_B4の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B4'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    
-    data[f'部品置き場からの入庫（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場からの入庫'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
-    data[f'部品置き場で滞留（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場で滞留'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
+    data[f'間口の平均充足率（t-{end_hours_ago}~t-{timelag}）'] = data[f'間口_A1の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_A2の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B1の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B2の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B3の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B4の充足率（t-{end_hours_ago}~t-{timelag}）']
+
+    data[f'部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場の入庫滞留状況'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
+    #data[f'部品置き場からの入庫（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場からの入庫'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
+    #data[f'部品置き場で滞留（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場で滞留'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
     data[f'定期便にモノ無し（t-{end_hours_ago}~t-{timelag}）'] = data['定期便にモノ無し'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
     
     
@@ -520,6 +546,68 @@ def process_shiresakibin_flag(lagged_features, arrival_times_df):
     lagged_features2 = drop_columns_with_word(lagged_features2, '平均納入時間')
 
     return lagged_features2
+
+def display_shap_contributions(df1_long):
+    # 正の値で大きい上位3つと負の値で小さい（絶対値が大きい）上位3つを抽出
+    top_3_positive = df1_long[df1_long['寄与度（SHAP値）'] > 0].nlargest(3, '寄与度（SHAP値）')
+    top_3_negative = df1_long[df1_long['寄与度（SHAP値）'] < 0].nsmallest(3, '寄与度（SHAP値）')
+
+    # 空のカラム名を削除
+    top_3_positive = top_3_positive.loc[:, top_3_positive.columns != '']
+    top_3_negative = top_3_negative.loc[:, top_3_negative.columns != '']
+
+
+    # # 変数名の変更
+    # if 'A' in top_3_positive['変数'].values:
+    #     top_3_positive['変数'].replace({'A': 'A+'}, inplace=True)
+    # if 'B' in top_3_positive['変数'].values:
+    #     top_3_positive['変数'].replace({'B': 'B+'}, inplace=True)
+    # if 'C' in top_3_positive['変数'].values:
+    #     top_3_positive['変数'].replace({'C': 'C+'}, inplace=True)
+
+    # if 'A' in top_3_negative['変数'].values:
+    #     top_3_negative['変数'].replace({'A': 'A-'}, inplace=True)
+    # if 'B' in top_3_negative['変数'].values:
+    #     top_3_negative['変数'].replace({'B': 'B-'}, inplace=True)
+    # if 'C' in top_3_negative['変数'].values:
+    #     top_3_negative['変数'].replace({'C': 'C-'}, inplace=True)
+
+
+    # 正の値の上位3つに順位を追加
+    top_3_positive.reset_index(drop=True, inplace=True)
+    top_3_positive.index += 1
+    top_3_positive['順位'] = top_3_positive.index
+
+    # 負の値の上位3つに順位を追加
+    top_3_negative.reset_index(drop=True, inplace=True)
+    top_3_negative.index += 1
+    top_3_negative['順位'] = top_3_negative.index
+
+    # 順位、変数名、値だけを表示し、インデックスは消す
+    top_3_positive = top_3_positive[['順位', '変数', '寄与度（SHAP値）']]
+    top_3_negative = top_3_negative[['順位', '変数', '寄与度（SHAP値）']]
+
+    # カスタムCSSを列名に適用するための関数
+    def set_header_color(styler, color):
+        styler.set_table_styles(
+            [{
+                'selector': 'th.col_heading',
+                'props': [('background-color', color)]
+            }],
+            overwrite=False
+        )
+        return styler
+
+    # スタイリングを適用（列名に色を変更）
+    styled_positive = top_3_positive.style.pipe(set_header_color, 'lightcoral')
+    styled_negative = top_3_negative.style.pipe(set_header_color, 'lightblue')
+
+    # テーブル表示（インデックスを非表示にする）
+    st.subheader('在庫増に関係する上位３要因')
+    st.write(styled_positive.hide(axis="index").to_html(), unsafe_allow_html=True)
+
+    st.subheader('在庫減に関係する上位３要因')
+    st.write(styled_negative.hide(axis="index").to_html(), unsafe_allow_html=True)
 
 #def visualize_stock_trend(data):
 #

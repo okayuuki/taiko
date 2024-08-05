@@ -1,4 +1,4 @@
-# app.py
+#ライブラリのimport
 import streamlit as st
 import pandas as pd
 import analysis_v2 # analysis_v2.pyが同じディレクトリにある前提
@@ -18,46 +18,58 @@ def load_flag(filename='flag.pkl'):
         print(f"Model and data loaded from {filename}")
         return step1_flag, step2_flag, step3_flag
         
-# `rf_model`と`X`と'data'を保存する関数
-def save_model_and_data(rf_model, X, data, filename='model_and_data.pkl'):
+# 中間結果変数を保存する関数
+def save_model_and_data(rf_model, X, data, product, filename='model_and_data.pkl'):
     with open(filename, 'wb') as file:
-        pickle.dump((rf_model, X, data), file)
+        pickle.dump((rf_model, X, data, product), file)
         print(f"Model and data saved to {filename}")
         
-# `rf_model`と`X`と'data'を読み込む関数
+# 中間結果変数を読み込む関数
 def load_model_and_data(filename='model_and_data.pkl'):
     with open(filename, 'rb') as file:
-        rf_model, X, data = pickle.load(file)
+        rf_model, X, data, product = pickle.load(file)
         print(f"Model and data loaded from {filename}")
-        return rf_model, X, data
+        return rf_model, X, data, product
 
+# 品番情報を表示する関数
+def display_hinban_info(hinban):
+    file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+    df = pd.read_csv(file_path, encoding='shift_jis')
+    df['品番'] = df['品番'].str.strip()
+    filtered_df = df[df['品番'] == hinban]# 品番を抽出
+    filtered_df = pd.DataFrame(filtered_df)
+    filtered_df = filtered_df.reset_index(drop=True)
+    product = filtered_df.loc[0]
 
-def main():
-    
-    st.sidebar.title("ナビゲーション")
-    page = st.sidebar.radio("ページ選択", ["🏠 ホーム", "📊 分析","📖 マニュアル"])
-    
-    # 折り返し線を追加
-    st.sidebar.markdown("---")
+    # カスタムCSSを適用して画面サイズを中央にする
+    st.markdown(
+        """
+        <style>
+        .main .block-container {
+            max-width: 60%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if page == "🏠 ホーム":
+    # タイトル表示
+    st.header('品番情報')
     
-        #アプリ立ち上げ時に分析ページの実行フラグを初期化
-        step1_flag = 0
-        step2_flag = 0
-        step3_flag = 0
-                
-        # 分析用の各ステップの実行フラグを保存
-        save_flag(step1_flag, step2_flag, step3_flag)
-        
-        st.title("🤖 AI在庫分析アプリ 0.01")
-        st.write("このアプリは、AIを使って在庫の分析を行うためのツールです。外部のDBからデータをインポートし、リアルタイムで在庫の分析を行います")
-        
-    elif page == "📊 分析":
-        analysis_page()
-        
-    elif page == "📖 マニュアル":
-        st.title("マニュアル")
+    value1 = str(product['品番'])
+    value2 = str(product['品名'])
+    value3 = str(product['仕入先名'])
+    value4 = str(product['収容数'])
+    # 3つの列を作成
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(label="品番", value=value1)
+    col2.metric(label="品名", value=value2)
+    col3.metric(label="仕入先名", value=value3)
+    col4.metric(label="収容数", value=value4)
+    #差分表示一例
+    #col3.metric(label="仕入先名", value="15 mph", delta="1 mph")
 
 def analysis_page():
 
@@ -65,9 +77,10 @@ def analysis_page():
     step1_flag, step2_flag, step3_flag = load_flag()
     
     # 確認用
-    #st.sidebar.info(f"{step1_flag}")
-    #st.sidebar.info(f"{step2_flag}")
-    #st.sidebar.info(f"{step3_flag}")
+    # フラグ状態どうなっている？
+    #st.sidebar.success(f"{step1_flag}")
+    #st.sidebar.success(f"{step2_flag}")
+    #st.sidebar.success(f"{step3_flag}")
 
     st.sidebar.title("STEP1：データ選択")
 
@@ -93,14 +106,14 @@ def analysis_page():
     # 適用ボタンが押されたときの処理
     if submit_button_step1 == True:
 
-        st.sidebar.info(f"新たに選択された品番: {product}")
+        st.sidebar.success(f"新たに選択された品番: {product}")
         
         # analysis_v1.pyの中で定義されたshow_analysis関数を呼び出す
         # 学習
         data, rf_model, X = analysis_v2.show_analysis(product)
 
         # モデルとデータを保存
-        save_model_and_data(rf_model, X, data)
+        save_model_and_data(rf_model, X, data, product)
         
         #実行フラグを更新する
         step1_flag = 1
@@ -109,7 +122,8 @@ def analysis_page():
 
         # モデルとデータを保存
         save_flag(step1_flag, step2_flag, step3_flag)
-
+        
+        display_hinban_info(product)
 
     # 適用ボタンが押されなかったときの処理
     else:
@@ -120,15 +134,16 @@ def analysis_page():
 
         #1度はボタン押されている
         elif step1_flag == 1:
-            st.sidebar.info(f"過去に選択された品番: {product}")
+            st.sidebar.success(f"過去に選択された品番: {product}")
             
             # 保存したモデルとデータを読み込む
-            rf_model, X, data = load_model_and_data()
-        
+            rf_model, X, data, product = load_model_and_data()
+
+            display_hinban_info(product)
         
     #--------------------------------------------------------------------------------
         
-    # サイドバーで開始日と終了日を選択
+    # タイトル
     st.sidebar.title("STEP2：データ確認")
     
     # ---<ToDo>---
@@ -187,8 +202,10 @@ def analysis_page():
             step2_flag = 2
             
         else:
-            st.sidebar.info(f"開始日時: {start_datetime}, インデックス: {start_index}")
-            st.sidebar.info(f"終了日時: {end_datetime}, インデックス: {end_index}")
+            st.sidebar.success(f"開始日時: {start_datetime}")
+            st.sidebar.success(f"終了日時: {end_datetime}")
+            #st.sidebar.success(f"開始日時: {start_datetime}, インデックス: {start_index}")
+            #st.sidebar.success(f"終了日時: {end_datetime}, インデックス: {end_index}")
             min_datetime, max_datetime, bar_df, df2 = analysis_v2.step2(data, rf_model, X, start_index, end_index)
             step2_flag = 1
 
@@ -203,8 +220,8 @@ def analysis_page():
             max_datetime = max_datetime.to_pydatetime()
             
         elif step2_flag == 1:
-            st.sidebar.info(f"開始日時1: {start_datetime}, インデックス: {start_index}")
-            st.sidebar.info(f"終了日時1: {end_datetime}, インデックス: {end_index}")
+            st.sidebar.success(f"開始日時: {start_datetime}")
+            st.sidebar.success(f"終了日時: {end_datetime}")
             min_datetime, max_datetime, bar_df, df2 = analysis_v2.step2(data, rf_model, X, start_index, end_index)
             step2_flag = 1
 
@@ -231,7 +248,7 @@ def analysis_page():
         
     if submit_button_step3:
         step3_flag = 1
-        st.sidebar.info(f"選択された日時: {selected_datetime}")
+        st.sidebar.success(f"選択された日時: {selected_datetime}")
         
         analysis_v2.step3(bar_df, df2, selected_datetime)
         
@@ -241,8 +258,37 @@ def analysis_page():
     elif step3_flag == 0:
         st.sidebar.warning("日時を選択してください")
 
+def main():
+    
+    #スライドバーの設定
+    st.sidebar.title("ナビゲーション")
+    page = st.sidebar.radio("ページ選択", ["🏠 ホーム", "📊 分析","📖 マニュアル"])
+    
+    # 折り返し線を追加
+    st.sidebar.markdown("---")
+
+    if page == "🏠 ホーム":
+    
+        #アプリ立ち上げ時に分析ページの実行フラグを初期化
+        step1_flag = 0
+        step2_flag = 0
+        step3_flag = 0
+                
+        # 分析用の各ステップの実行フラグを保存
+        save_flag(step1_flag, step2_flag, step3_flag)
+        
+        st.title("🤖 AI在庫分析アプリ 0.01")
+        st.write("このアプリは、AIを使って在庫の分析を行うためのツールです。外部のDBからデータをインポートし、リアルタイムで在庫の分析を行います")
+        
+    elif page == "📊 分析":
+        analysis_page()
+        
+    elif page == "📖 マニュアル":
+        st.title("マニュアル")
+
+#本スクリプトが直接実行されたときに実行
 if __name__ == "__main__":
 
-    print("test")
+    print("プログラムを開始します")
     
     main()
