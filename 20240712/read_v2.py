@@ -5,6 +5,8 @@ import warnings
 import numpy as np
 import pandas as pd
 from datetime import datetime, time
+import glob
+import re
 
 
 def read_data():
@@ -21,9 +23,9 @@ def read_data():
     teikibin_df = pd.read_csv(file_path, encoding='shift_jis')
     teikibin_df['日時'] = pd.to_datetime(teikibin_df['日時'])
     
-    #-----------------------------------------------------------------------
-    #LINKSと自動ラックQRのタイムスタンプをかんばん単位で結合したもの
-    #-----------------------------------------------------------------------
+    #!-----------------------------------------------------------------------
+    #!LINKSと自動ラックQRのタイムスタンプをかんばん単位で結合したもの
+    #!-----------------------------------------------------------------------
     file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
     Timestamp_df = pd.read_csv(file_path, encoding='shift_jis')
     # 品番列の空白を削除
@@ -38,9 +40,9 @@ def read_data():
     #columns = df.columns.tolist()
     #print(columns)
 
-    #-----------------------------------------------------------------------
-    #自動ラックの在庫データ
-    #-----------------------------------------------------------------------
+    #!-----------------------------------------------------------------------
+    #!自動ラックの在庫データ
+    #!-----------------------------------------------------------------------
     file_path = '中間成果物/在庫推移MBデータ_統合済&特定日時抽出済.csv'
     zaiko_df = pd.read_csv(file_path, encoding='shift_jis')
     # 品番列の空白を削除
@@ -49,19 +51,84 @@ def read_data():
     zaiko_df['計測日時'] = pd.to_datetime(zaiko_df['計測日時'], errors='coerce')
     zaiko_df = zaiko_df.rename(columns={'計測日時': '日時'})
 
-    #自動ラックの間口別在庫数や全入庫数のデータ計算
+    #! 自動ラックの間口別在庫数や全入庫数のデータ計算
     AutomatedRack_Details_df = calculate_AutomatedRack_Details(zaiko_df)
 
-    #仕入先ダイヤ別の早着や遅れ時間を計算
+    #! 仕入先ダイヤ別の早着や遅れ時間を計算
     arrival_times_df = calculate_supplier_truck_arrival_types()
     
-    #組立実績データの加重平均を計算
+    #! 組立実績データの加重平均を計算
     kumitate_df = calculate_weighted_average_of_kumitate()
 
     #
     return AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df
 
+def process_Activedata():
 
+    # ディレクトリ内のすべてのCSVファイルを取得
+    file_paths = glob.glob('生データ/手配必要数/*.csv')
+
+    # 統合結果を保存するリスト
+    all_data = []
+
+    # 各CSVファイルに対して処理を実行
+    for file_name in file_paths:
+        # ファイル名から年と月を抽出
+        year_month = re.findall(r'\d{6}', os.path.basename(file_name))[0]  # ファイル名の頭6文字から年と月を抽出
+        year = int(year_month[:4])
+        month = int(year_month[4:6])
+
+        # CSVファイルを読み込む
+        # todo 必要数のみ読み取り
+        df_raw = pd.read_csv(file_name, encoding='shift_jis', skiprows=9, usecols=range(70))  # 10行目から読み込むために9行スキップ
+
+        # 列名のクリーニング
+        df_raw.columns = df_raw.columns.str.replace('="', '').str.replace('"', '')
+
+        # 日量数列の選択
+        daily_columns = df_raw.columns[df_raw.columns.str.contains(r'\d+\(.*\)')].tolist()
+        print(daily_columns)
+        df_relevant = df_raw[['品番', '収容数', 'サイクル間隔', 'サイクル回数', 'サイクル情報'] + daily_columns]
+
+        # データフレームを縦に展開
+        df_melted = df_relevant.melt(id_vars=['品番', '収容数', 'サイクル間隔', 'サイクル回数', 'サイクル情報'], var_name='日付', value_name='日量数')
+
+        # 日付の列を整数型に変換
+        df_melted['日付'] = df_melted['日付'].str.extract(r'(\d+)').astype(int)
+
+        # 日付列に年と月を統合
+        df_melted['日付'] = pd.to_datetime(df_melted.apply(lambda row: f"{year}-{month}-{row['日付']}", axis=1))
+
+        # 値クリーニング
+        df_melted['日量数'] = df_melted['日量数'].str.replace(',', '').fillna(0).astype(int)
+        df_melted['品番'] = df_melted['品番'].str.replace('="', '').str.replace('"', '').str.replace('=', '').str.replace('-', '')
+        df_melted['収容数'] = df_melted['収容数'].str.replace(',', '').fillna(0).astype(int)
+        df_melted['サイクル間隔'] = df_melted['サイクル間隔'].astype(str).str.replace('="', '').str.replace('"', '').astype(int)
+        df_melted['サイクル回数'] = df_melted['サイクル回数'].astype(str).str.replace('="', '').str.replace('"', '').astype(int)
+        df_melted['サイクル情報'] = df_melted['サイクル情報'].astype(str).str.replace('="', '').str.replace('"', '').astype(float)
+
+        #
+        df_melted['日量数（箱数）'] = df_melted['日量数']/df_melted['収容数']
+        # 年と週番号を追加
+        df_melted['年'] = df_melted['日付'].dt.year
+        df_melted['週番号'] = df_melted['日付'].dt.isocalendar().week
+
+        # 結果をリストに追加
+        all_data.append(df_melted)
+
+    # すべてのデータフレームを統合
+    df_final = pd.concat(all_data, ignore_index=True)
+
+    # 週最大日量数の計算
+    df_final['週最大日量数'] = df_final.groupby(['品番', '週番号'])['日量数'].transform('max')
+    df_final['週最大日量数（箱数）'] = df_final['週最大日量数']//df_final['収容数']
+
+    #設計値MIN
+    df_final['設計値MIN'] = 0.1*(df_final['週最大日量数（箱数）']*df_final['サイクル間隔']*(1+df_final['サイクル情報'])/df_final['サイクル回数'])
+    df_final['設計値MAX'] = df_final['設計値MIN'] + df_final['週最大日量数（箱数）']/df_final['サイクル回数']
+
+    return df_final
+    
 def calculate_AutomatedRack_Details(zaiko_df):
 
     #モーションボードの列名を修正する必要あり
@@ -306,6 +373,7 @@ def calculate_weighted_average_of_kumitate():
 
 #途中作成のまま
 def calculate_teikibin_():
+
     def add_previous_hours_data(df, X):
         """
         データフレームに1時間前からX時間前までの「便合計」のデータ列を追加する関数。

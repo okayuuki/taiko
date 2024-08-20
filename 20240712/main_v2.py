@@ -1,10 +1,10 @@
 #ライブラリのimport
 import streamlit as st
 import pandas as pd
-import analysis_v2 # analysis_v2.pyが同じディレクトリにある前提
-import sys
 from datetime import datetime, time as dt_time
 import pickle
+import time
+import analysis_v2 # analysis_v2.pyが同じディレクトリにある前提
 
 # 分析用の各ステップの実行フラグを保存する関数
 def save_flag(step1_flag, step2_flag, step3_flag, filename='flag.pkl'):
@@ -19,7 +19,7 @@ def load_flag(filename='flag.pkl'):
         return step1_flag, step2_flag, step3_flag
         
 # 中間結果変数を保存する関数
-def save_model_and_data(rf_model, X, data, product, filename='model_and_data.pkl'):
+def save_model_and_data(rf_model, X, data, y, product, filename='model_and_data.pkl'):
     with open(filename, 'wb') as file:
         pickle.dump((rf_model, X, data, product), file)
         print(f"Model and data saved to {filename}")
@@ -27,9 +27,9 @@ def save_model_and_data(rf_model, X, data, product, filename='model_and_data.pkl
 # 中間結果変数を読み込む関数
 def load_model_and_data(filename='model_and_data.pkl'):
     with open(filename, 'rb') as file:
-        rf_model, X, data, product = pickle.load(file)
+        rf_model, X, data, y, product = pickle.load(file)
         print(f"Model and data loaded from {filename}")
-        return rf_model, X, data, product
+        return rf_model, X, data, y, product
 
 # 品番情報を表示する関数
 def display_hinban_info(hinban):
@@ -40,20 +40,6 @@ def display_hinban_info(hinban):
     filtered_df = pd.DataFrame(filtered_df)
     filtered_df = filtered_df.reset_index(drop=True)
     product = filtered_df.loc[0]
-
-    # カスタムCSSを適用して画面サイズを中央にする
-    st.markdown(
-        """
-        <style>
-        .main .block-container {
-            max-width: 60%;
-            margin-left: auto;
-            margin-right: auto;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
     # タイトル表示
     st.header('品番情報')
@@ -73,6 +59,20 @@ def display_hinban_info(hinban):
 
 def analysis_page():
 
+    # カスタムCSSを適用して画面サイズを設定する
+    st.markdown(
+        """
+        <style>
+        .main .block-container {
+            max-width: 70%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # 分析用の各ステップの実行フラグを読み込む
     step1_flag, step2_flag, step3_flag = load_flag()
     
@@ -82,7 +82,9 @@ def analysis_page():
     #st.sidebar.success(f"{step2_flag}")
     #st.sidebar.success(f"{step3_flag}")
 
-    st.sidebar.title("STEP1：データ選択")
+    st.sidebar.write("## 🔥各ステップを順番に実行してください🔥")
+
+    st.sidebar.title("ステップ１：品番選択")
 
     # フォーム作成
     with st.sidebar.form(key='my_form'):
@@ -101,7 +103,7 @@ def analysis_page():
         product = st.selectbox("品番を選択してください", unique_hinban_list)
         
         # 「適用」ボタンをフォーム内に追加
-        submit_button_step1 = st.form_submit_button(label='適用')
+        submit_button_step1 = st.form_submit_button(label='登録する')
 
     # 適用ボタンが押されたときの処理
     if submit_button_step1 == True:
@@ -110,10 +112,10 @@ def analysis_page():
         
         # analysis_v1.pyの中で定義されたshow_analysis関数を呼び出す
         # 学習
-        data, rf_model, X = analysis_v2.show_analysis(product)
+        data, rf_model, X, y = analysis_v2.show_analysis(product)
 
         # モデルとデータを保存
-        save_model_and_data(rf_model, X, data, product)
+        save_model_and_data(rf_model, X, data, y, product)
         
         #実行フラグを更新する
         step1_flag = 1
@@ -137,14 +139,14 @@ def analysis_page():
             st.sidebar.success(f"過去に選択された品番: {product}")
             
             # 保存したモデルとデータを読み込む
-            rf_model, X, data, product = load_model_and_data()
+            rf_model, X, data, y, product = load_model_and_data()
 
             display_hinban_info(product)
         
     #--------------------------------------------------------------------------------
         
     # タイトル
-    st.sidebar.title("STEP2：データ確認")
+    st.sidebar.title("ステップ２：在庫確認")
     
     # ---<ToDo>---
     # データの最小日時と最大日時を取得
@@ -168,19 +170,49 @@ def analysis_page():
         if key not in st.session_state:
             st.session_state[key] = value
     
+    #スライドバーで選択するバージョン
+    # # サイドバーにフォームの作成
+    # with st.sidebar.form(key='filter_form'):
+    #     st.session_state.start_date = st.date_input("開始日", st.session_state.start_date)
+    #     st.session_state.end_date = st.date_input("終了日", st.session_state.end_date)
+    #     start_time_hours = st.slider("開始時間", 0, 23, st.session_state.start_time.hour, format="%02d:00")
+    #     end_time_hours = st.slider("終了時間", 0, 23, st.session_state.end_time.hour, format="%02d:00")
+    
+    #     # 時間を更新
+    #     st.session_state.start_time = dt_time(start_time_hours, 0)
+    #     st.session_state.end_time = dt_time(end_time_hours, 0)
+    
+    #     # フォームの送信ボタン
+    #     submit_button_step2 = st.form_submit_button(label='適用')
+
+    # 時間の選択肢をリストとして用意
+    hours_options = [f"{i:02d}:00" for i in range(24)]
+
     # サイドバーにフォームの作成
     with st.sidebar.form(key='filter_form'):
         st.session_state.start_date = st.date_input("開始日", st.session_state.start_date)
         st.session_state.end_date = st.date_input("終了日", st.session_state.end_date)
-        start_time_hours = st.slider("開始時間", 0, 23, st.session_state.start_time.hour, format="%02d:00")
-        end_time_hours = st.slider("終了時間", 0, 23, st.session_state.end_time.hour, format="%02d:00")
-    
+
+        # 開始時間の設定
+        if st.session_state.start_date.weekday() == 0:  # 月曜であるかどうかを確認
+            start_time_hours_str = "08:00"
+        else:
+            start_time_hours_str = "00:00"
+
+        end_time_hours_str = "23:00"
+        
+        #start_time_hours_str = st.selectbox("開始時間", hours_options, index=st.session_state.start_time.hour)
+        #end_time_hours_str = st.selectbox("終了時間", hours_options, index=st.session_state.end_time.hour)
+
+        #st.header(start_time_hours_str)
+        #st.header(end_time_hours_str)
+        
         # 時間を更新
-        st.session_state.start_time = dt_time(start_time_hours, 0)
-        st.session_state.end_time = dt_time(end_time_hours, 0)
-    
+        st.session_state.start_time = dt_time(int(start_time_hours_str.split(":")[0]), 0)
+        st.session_state.end_time = dt_time(int(end_time_hours_str.split(":")[0]), 0)
+        
         # フォームの送信ボタン
-        submit_button_step2 = st.form_submit_button(label='適用')
+        submit_button_step2 = st.form_submit_button(label='登録する')
         
     data = data.reset_index(drop=True)
     
@@ -232,19 +264,34 @@ def analysis_page():
     #--------------------------------------------------------------------------------
     
     # サイドバーに日時選択スライダーを表示
-    st.sidebar.title("STEP3：AIデータ分析")
+    st.sidebar.title("ステップ３：要因分析")
     
+    # スライドバーで表示するよう
+    # # フォーム作成
+    # with st.sidebar.form("date_selector_form"):
+    #     selected_datetime = st.slider(
+    #         "要因分析の結果を表示する日時を選択してください",
+    #         min_value=min_datetime,
+    #         max_value=max_datetime,
+    #         value=min_datetime,
+    #         format="YYYY-MM-DD HH",
+    #         step=pd.Timedelta(hours=1)
+    #     )
+    #     submit_button_step3 = st.form_submit_button("登録する")
+
+    # 日時の選択肢を生成
+    datetime_range = pd.date_range(min_datetime, max_datetime, freq='H')
+    datetime_options = [dt.strftime("%Y-%m-%d %H:%M") for dt in datetime_range]
+
     # フォーム作成
     with st.sidebar.form("date_selector_form"):
-        selected_datetime = st.slider(
+        # 日時選択用セレクトボックス
+        selected_datetime = st.selectbox(
             "要因分析の結果を表示する日時を選択してください",
-            min_value=min_datetime,
-            max_value=max_datetime,
-            value=min_datetime,
-            format="YYYY-MM-DD HH",
-            step=pd.Timedelta(hours=1)
+            datetime_options
         )
-        submit_button_step3 = st.form_submit_button("適用")
+        submit_button_step3 = st.form_submit_button("登録する")
+
         
     if submit_button_step3:
         step3_flag = 1
@@ -268,6 +315,31 @@ def main():
     st.sidebar.markdown("---")
 
     if page == "🏠 ホーム":
+
+        import subprocess
+
+        # javacのフルパスを指定してコンパイル
+        compilation = subprocess.run([r"C:\Program Files\Common Files\Oracle\Java\javapath\javac.exe", "HelloWorld.java"], capture_output=True, text=True)
+        #compilation = subprocess.run(["C:/Program Files/Common Files/Oracle/Java/javapath/javac.exe", "HelloWorld.java"], capture_output=True, text=True)
+
+        # コンパイルの結果を確認
+        if compilation.returncode == 0:
+            st.write("Compilation successful")
+            
+            # Javaプログラムの実行
+            execution = subprocess.run([r"C:\Program Files\Common Files\Oracle\Java\javapath\javac.exe", "HelloWorld.java"], capture_output=True, text=True)
+            
+            # 実行結果を表示
+            if execution.returncode == 0:
+                st.write("Execution successful")
+                st.write("Output:")
+                st.write(execution.stdout)
+            else:
+                st.write("Execution failed:")
+                print(execution.stderr)
+        else:
+            st.write("Compilation failed:")
+            print(compilation.stderr)
     
         #アプリ立ち上げ時に分析ページの実行フラグを初期化
         step1_flag = 0
@@ -285,6 +357,26 @@ def main():
         
     elif page == "📖 マニュアル":
         st.title("マニュアル")
+
+        # プログレスバーの初期化
+        progress_bar = st.progress(0)
+
+        # ステータス表示のためのテキスト
+        status_text = st.empty()
+
+        # 進捗状況の更新
+        for i in range(101):
+            # プログレスバーの進捗を更新
+            progress_bar.progress(i)
+            
+            # ステータス表示の更新
+            status_text.text(f'Progress: {i}%')
+            
+            # 処理の遅延をシミュレート
+            time.sleep(0.1)  # 0.1秒間の遅延
+
+        # 処理完了後のメッセージ
+        st.success("Processing complete!")
 
 #本スクリプトが直接実行されたときに実行
 if __name__ == "__main__":

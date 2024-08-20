@@ -30,7 +30,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import Lasso
 from sklearn.metrics import mean_squared_error, max_error, mean_absolute_error
 from datetime import datetime, time as dt_time
-import sys
 
 def display_corr_matrix(df):
 
@@ -547,45 +546,129 @@ def process_shiresakibin_flag(lagged_features, arrival_times_df):
 
     return lagged_features2
 
-def display_shap_contributions(df1_long):
-    # 正の値で大きい上位3つと負の値で小さい（絶対値が大きい）上位3つを抽出
-    top_3_positive = df1_long[df1_long['寄与度（SHAP値）'] > 0].nlargest(3, '寄与度（SHAP値）')
-    top_3_negative = df1_long[df1_long['寄与度（SHAP値）'] < 0].nsmallest(3, '寄与度（SHAP値）')
+def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
 
-    # 空のカラム名を削除
-    top_3_positive = top_3_positive.loc[:, top_3_positive.columns != '']
-    top_3_negative = top_3_negative.loc[:, top_3_negative.columns != '']
+    """
+    在庫情報の折れ線グラフを作成し、Streamlitで表示する関数
 
+    Parameters:
+    line_df (pd.DataFrame): 実績データのデータフレーム（日時を含む）
+    y_pred_subset (pd.Series): 機械学習モデルによる予測在庫数
+    y_base_subset (pd.Series): 基準在庫数（予測に基づく補正後の値）
 
-    # # 変数名の変更
-    # if 'A' in top_3_positive['変数'].values:
-    #     top_3_positive['変数'].replace({'A': 'A+'}, inplace=True)
-    # if 'B' in top_3_positive['変数'].values:
-    #     top_3_positive['変数'].replace({'B': 'B+'}, inplace=True)
-    # if 'C' in top_3_positive['変数'].values:
-    #     top_3_positive['変数'].replace({'C': 'C+'}, inplace=True)
+    Returns:
+    None
+    """
 
-    # if 'A' in top_3_negative['変数'].values:
-    #     top_3_negative['変数'].replace({'A': 'A-'}, inplace=True)
-    # if 'B' in top_3_negative['変数'].values:
-    #     top_3_negative['変数'].replace({'B': 'B-'}, inplace=True)
-    # if 'C' in top_3_negative['変数'].values:
-    #     top_3_negative['変数'].replace({'C': 'C-'}, inplace=True)
+    def add_common_traces(fig, line_df, Activedata):
 
+        """
+        グラフに共通のライン（0ライン、設計値MIN、設計値MAX）を追加する関数
 
-    # 正の値の上位3つに順位を追加
-    top_3_positive.reset_index(drop=True, inplace=True)
-    top_3_positive.index += 1
-    top_3_positive['順位'] = top_3_positive.index
+        Parameters:
+        fig (go.Figure): グラフオブジェクト
+        line_df (pd.DataFrame): 実績データのデータフレーム（日時を含む）
+        Activedata (pd.DataFrame): 設計値データを含むデータフレーム
 
-    # 負の値の上位3つに順位を追加
-    top_3_negative.reset_index(drop=True, inplace=True)
-    top_3_negative.index += 1
-    top_3_negative['順位'] = top_3_negative.index
+        Returns:
+        go.Figure: グラフオブジェクト（共通ラインを追加済み）
+        """
 
-    # 順位、変数名、値だけを表示し、インデックスは消す
-    top_3_positive = top_3_positive[['順位', '変数', '寄与度（SHAP値）']]
-    top_3_negative = top_3_negative[['順位', '変数', '寄与度（SHAP値）']]
+        # 0のラインを赤線で追加
+        fig.add_trace(go.Scatter(
+            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+            y=np.zeros(len(line_df)),  # line_dfの長さに合わせて0の配列を作成
+            mode='lines',
+            name='在庫0',
+            line=dict(color="red", width=3)
+        ))
+
+        # 設計値MINのラインを追加
+        fig.add_trace(go.Scatter(
+            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+            y=Activedata['設計値MIN'],  
+            mode='lines',
+            name='設計値MIN',
+            line=dict(color="orange", width=3)
+        ))
+
+        # 設計値MAXのラインを追加
+        fig.add_trace(go.Scatter(
+            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+            y=Activedata['設計値MAX'],  
+            mode='lines',
+            name='設計値MAX',
+            line=dict(color="green", width=3)
+        ))
+
+        return fig
+
+    # タブの作成
+    tab1, tab2 = st.tabs(["実績値を確認する", "AI推定値も確認する"])
+
+    with tab1:
+        # 在庫折れ線グラフの初期化
+        fig_line = go.Figure()
+
+        # 実績の在庫数の折れ線グラフを追加
+        for var in line_df.columns[1:]:
+            fig_line.add_trace(go.Bar(
+                x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+                y=line_df[var], 
+                marker=dict(color='blue', opacity=0.3),
+                name=var))
+
+        # 共通のラインを追加
+        fig_line = add_common_traces(fig_line, line_df, Activedata)
+
+        # 折れ線グラフのレイアウトを設定
+        fig_line.update_layout(
+            xaxis_title="日時",
+            yaxis_title="在庫数（箱）",
+            height=500,  
+            width=100,   
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+
+        # 折れ線グラフを表示
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    with tab2:
+        # 在庫折れ線グラフの初期化
+        fig_line = go.Figure()
+
+        # 実績の在庫数の折れ線グラフを追加
+        for var in line_df.columns[1:]:
+            fig_line.add_trace(go.Bar(
+                x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+                y=line_df[var], 
+                marker=dict(color='blue', opacity=0.3),
+                name=var))
+
+        # 機械学習モデルの予測在庫数の折れ線グラフを追加
+        fig_line.add_trace(go.Scatter(
+            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+            y=y_pred_subset + y_base_subset,
+            mode='lines+markers',
+            name='AI推定値'
+        ))
+
+        # 共通のラインを追加
+        fig_line = add_common_traces(fig_line, line_df, Activedata)
+
+        # 折れ線グラフのレイアウトを設定
+        fig_line.update_layout(
+            xaxis_title="日時",
+            yaxis_title="在庫数（箱）",
+            height=500,  
+            width=100,   
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+
+        # 折れ線グラフを表示
+        st.plotly_chart(fig_line, use_container_width=True)
+
+def display_shap_contributions( df1_long):
 
     # カスタムCSSを列名に適用するための関数
     def set_header_color(styler, color):
@@ -598,15 +681,113 @@ def display_shap_contributions(df1_long):
         )
         return styler
 
+    # マッピングを '変数' 列に基づいて '要因名' 列に適用する関数を定義
+    def map_factor_positive(variable):
+        if variable.startswith("No1_"):
+            return "いつもより「発注かんばん数が多い」"
+        elif variable.startswith("No2_"):
+            return "いつもより「計画組立生産台数が少ない」"
+        elif variable.startswith("No3_"):
+            return "いつもより「稼働率が低い」"
+        elif variable.startswith("No4_"):
+            return "いつもより「挽回納入数が多い」"
+        elif variable.startswith("No5_"):
+            return "いつもより「仕入先便が早着している」"
+        elif variable.startswith("No6_"):
+            return "いつもより「定期便が早着している」"
+        elif variable.startswith("No7_"):
+            return "いつもより「間口？？」"
+        elif variable.startswith("No8_"):
+            return "いつもより「部品置き場からの入庫数が多い」"
+        elif variable.startswith("No9_"):
+            return "いつもより「定期便にモノがある」"
+        else:
+            return None  # 一致するものがない場合は None を返す
+        
+    # マッピングを '変数' 列に基づいて '要因名' 列に適用する関数を定義
+    def map_factor_negative(variable):
+        if variable.startswith("No1_"):
+            return "いつもより「発注かんばんが少ない」"
+        elif variable.startswith("No2_"):
+            return "いつもより「計画組立生産台数が多い」"
+        elif variable.startswith("No3_"):
+            return "いつもより「稼働率が高い」"
+        elif variable.startswith("No4_"):
+            return "いつもより「未納"
+        elif variable.startswith("No5_"):
+            return "いつもより「仕入先便の遅着」"
+        elif variable.startswith("No6_"):
+            return "いつもより「定期便の遅着」"
+        elif variable.startswith("No7_"):
+            return "いつもより「間口の充足率が高い」"
+        elif variable.startswith("No8_"):
+            return "いつもより「部品置き場の滞留」"
+        elif variable.startswith("No9_"):
+            return "いつもより「定期便にモノが無い」"
+        else:
+            return None  # 一致するものがない場合は None を返す
+        
+    # 変数列からstartとendの数字を抽出する関数を定義します
+    def extract_time_range(variable):
+        match = re.search(r'（t-(\d+)~t-(\d+)）', variable)
+        if match:
+            return match.groups()
+        return None, None
+    
+    df1_long['start'], df1_long['end'] = zip(*df1_long['変数'].apply(extract_time_range))
+    df1_long['日時'] = pd.to_datetime(df1_long['日時'])
+    df1_long['start'] = pd.to_numeric(df1_long['start'])
+    df1_long['end'] = pd.to_numeric(df1_long['end'])
+    df1_long['開始時間'] = df1_long['日時'] - pd.to_timedelta(df1_long['start'], unit='h')
+    df1_long['終了時間'] = df1_long['日時'] - pd.to_timedelta(df1_long['end'], unit='h')
+    df1_long['開始時間'] = df1_long['開始時間'].dt.strftime('%m/%dの%H時')
+    df1_long['終了時間'] = df1_long['終了時間'].dt.strftime('%m/%dの%H時')
+
+    df1_long['期間'] = df1_long.apply(lambda row: f"{row['終了時間']}～{row['開始時間']}".split('（')[0], axis=1)
+    
+    # 正の値で大きい上位と負の値で小さい（絶対値が大きい）上位を抽出
+    top_positive = df1_long[df1_long['寄与度（SHAP値）'] > -0].nlargest(9, '寄与度（SHAP値）')
+    top_negative = df1_long[df1_long['寄与度（SHAP値）'] < 0].nsmallest(9, '寄与度（SHAP値）')
+
+    # 空のカラム名を削除
+    top_positive = top_positive.loc[:, top_positive.columns != '']
+    top_negative = top_negative.loc[:, top_negative.columns != '']
+
+    # 正の値の上位3つに順位を追加
+    top_positive.reset_index(drop=True, inplace=True)
+    top_positive.index += 1
+    top_positive['順位'] = top_positive.index
+
+    # 負の値の上位3つに順位を追加
+    top_negative.reset_index(drop=True, inplace=True)
+    top_negative.index += 1
+    top_negative['順位'] = top_negative.index
+
+
+    # 関数を適用して '要因名' 列を作成
+    top_positive['要因名'] = top_positive['変数'].apply(map_factor_positive)
+    top_negative['要因名'] = top_negative['変数'].apply(map_factor_negative)
+
+    # 変数列の頭に整形された開始時間と終了時間を追加します
+    #top_positive['期間'] = top_positive.apply(lambda row: f"{row['終了時間']}～{row['開始時間']}".split('（')[0], axis=1)
+
+    #st.dataframe(top_positive)
+
+    # 順位、変数名、値だけを表示し、インデックスは消す
+    top_positive = top_positive[['順位', '要因名','期間','元要因値','中央値','寄与度（SHAP値）']]
+    top_negative = top_negative[['順位', '要因名','期間','元要因値','中央値','寄与度（SHAP値）']]
+
+    #st.dataframe(top_positive)
+
     # スタイリングを適用（列名に色を変更）
-    styled_positive = top_3_positive.style.pipe(set_header_color, 'lightcoral')
-    styled_negative = top_3_negative.style.pipe(set_header_color, 'lightblue')
+    styled_positive = top_positive.style.pipe(set_header_color, 'lightcoral')
+    styled_negative = top_negative.style.pipe(set_header_color, 'lightblue')
 
     # テーブル表示（インデックスを非表示にする）
-    st.subheader('在庫増に関係する上位３要因')
+    st.subheader('在庫増に関係する要因ランキング')
     st.write(styled_positive.hide(axis="index").to_html(), unsafe_allow_html=True)
 
-    st.subheader('在庫減に関係する上位３要因')
+    st.subheader('在庫減に関係する要因ランキング')
     st.write(styled_negative.hide(axis="index").to_html(), unsafe_allow_html=True)
 
 #def visualize_stock_trend(data):

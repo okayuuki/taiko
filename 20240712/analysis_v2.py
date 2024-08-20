@@ -6,11 +6,7 @@ import numpy as np
 import pandas as pd
 #%matplotlib inline#Jupyter Notebook 専用のマジックコマンド。メンテ用で利用
 import matplotlib.pyplot as plt
-import re
-import time
-import shutil
 import shap
-import locale
 import seaborn as sns
 import matplotlib as mpl
 from dateutil.relativedelta import relativedelta
@@ -31,53 +27,49 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date, time
-import sys
+import pickle
+from sklearn.preprocessing import StandardScaler
 
 
 # フォント設定の変更（日本語対応のため）
 mpl.rcParams['font.family'] = 'MS Gothic'
 
 #データ読み取り用
-from read_v2 import read_data
+from read_v2 import read_data, process_Activedata
 #データ前処理用
 from functions_v2 import display_corr_matrix, calculate_hourly_counts,calculate_business_time_base,calculate_business_time_order, \
     calculate_business_time_reception,calculate_median_lt,find_best_lag_range,create_lagged_features,add_part_supplier_info, \
         find_columns_with_word_in_name,calculate_elapsed_time_since_last_dispatch,timedelta_to_hhmmss,set_arrival_flag, \
-            drop_columns_with_word,calculate_window_width,process_shiresakibin_flag,feature_engineering, display_shap_contributions
+            drop_columns_with_word,calculate_window_width,process_shiresakibin_flag,feature_engineering, \
+                plot_inventory_graph, display_shap_contributions
     
 def show_analysis(product):
 
-    #学習期間（解析期間）任意に設定できるように
+    #!学習期間（解析期間）任意に設定できるように。直近1年とかで
     start_date = '2023-10-01'
     end_date = '2024-03-31'
 
-    #前処理済みのデータをダウンロード
+    #! 前処理済みのデータをダウンロード
     AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df = read_data()
 
-    # 設定
+    #! 設定
     order_time_col = '発注日時'
     reception_time_col = '検収日時'
     target_time_col = '順立装置入庫日時'
     leave_time_col = '順立装置出庫日時'
 
-    # 全ての警告を無視する
+    #! 全ての警告を無視する
     warnings.filterwarnings('ignore')
         
     #-------------------------------------------------------------
     
-    # 結果を保存するためのデータフレームを初期化
+    #! 結果を保存するためのデータフレームを初期化
     results_df = pd.DataFrame(columns=['品番','仕入先名','平均在庫','Ridge回帰の平均誤差', 'Ridge回帰のマイナス方向の最大誤差', 'Ridge回帰のプラス方向の最大誤差',
                                            'ランダムフォレストの平均誤差', 'ランダムフォレストのマイナス方向の最大誤差', 'ランダムフォレストのプラス方向の最大誤差'],dtype=object)
     
-    #Timestamp_dfは所在管理MBのデータを統合したもの
-    #LINKSと自動ラックQRのデータを統合したもの、タイムスタンプ形式
 
-    #zaiko_dfは自動ラックの在庫
-
-    #Timestamp_df, zaiko_df, teikibin_df
-
-    #品番の数だけループを回す
-    #今は1品番で
+    #! 品番の数だけループを回す
+    #! 今は1品番で
     count = 0
     for part_number in [product]:
         
@@ -221,23 +213,50 @@ def show_analysis(product):
         #data['差分']=data[f'発注かんばん数（t-{timelag}~t-{timelag*2}）']-data[f'納入かんばん数（t-{reception_timelag}~t-{timelag+reception_timelag}）']
         # 説明変数の定義
 
-        st.dataframe(lagged_features.head(300))
+        #st.dataframe(lagged_features.head(300))
 
         data = data.rename(columns={'仕入先便到着フラグ': '仕入先便到着状況'})#コラム名変更
         data['定期便出発状況']=data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50
 
-        X = data[[f'発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）',f'計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）',f'計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）',
-                  '納入フレ（負は未納や正は挽回納入数を表す）','仕入先便到着状況','定期便出発状況',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
-                  f'間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）',#f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',
-                  f'部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）',#f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',
-                  f'定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）']]
-        # 目的変数の定義
-        #★
+        print(data.columns)
+
+        #! 番号を割り当てる
+        data[f'No1_発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）'] = data[f'発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）']
+        data[f'No2_計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）']
+        data[f'No3_計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）']
+        data['No4_納入フレ（負は未納や正は挽回納入数を表す）'] = data['納入フレ（負は未納や正は挽回納入数を表す）']
+        data['No5_仕入先便到着状況'] = data['仕入先便到着状況']
+        data['No6_定期便出発状況'] = data['定期便出発状況']
+        data[f'No7_間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）']
+        data[f'No8_部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）']
+        data[f'No9_定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）']
+
+        #! 説明変数の設定
+        X = data[[f'No1_発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）',
+                  f'No2_計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）',
+                  f'No3_計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）',
+                  'No4_納入フレ（負は未納や正は挽回納入数を表す）',
+                  'No5_仕入先便到着状況',
+                  'No6_定期便出発状況',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
+                  f'No7_間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）',#f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',
+                  f'No8_部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）',#f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',
+                  f'No9_定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）']]
+        
+        #! 目的変数の定義
         y = data[f'在庫増減数（t-0~t-{best_range_order}）']
         #y = data[f'在庫増減数(t)']
 
+        # DataFrame に変換（列名を指定する）
+        y = pd.DataFrame(y, columns=[f'在庫増減数（t-0~t-{best_range_order}）'])
+
+        # StandardScalerを使用して標準化
+        scaler = StandardScaler()
+        y_scaled = pd.DataFrame(scaler.fit_transform(y), columns=y.columns)
+
+        st.dataframe(X)
+
         # データを学習データとテストデータに分割
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y_scaled, test_size=0.2, random_state=42)
 
 
         # Lasso回帰モデルの作成
@@ -304,7 +323,7 @@ def show_analysis(product):
         with open("一時保存データ.csv", mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
             data.to_csv(f)
         
-        return data, rf_model, X
+        return data, rf_model, X, y
 
         # データフレームXから100行目から300行目までのデータを選択
         #X_subset = X.iloc[0:3000]
@@ -332,13 +351,28 @@ def show_analysis(product):
 
 def step2(data, rf_model, X, start_index, end_index):
 
+    #Todo 品番名を取り出すために実行、きれいじゃないから要修正
+    with open('model_and_data.pkl', 'rb') as file:
+        rf_model, X, data, product = pickle.load(file)
+
+    Activedata = process_Activedata()
+    #st.header(product)
+    Activedata = Activedata[Activedata['品番'] == product]
+
+    # 在庫データに合わせて時間粒度を1時間ごとにリサンプリング
+    # 内示データを日付ごとに集約して重複を排除
+    #Activedata = Activedata.groupby('日付').mean(numeric_only=True).reset_index()
+    Activedata = Activedata.set_index('日付').resample('H').ffill().reset_index()
+
+    #st.dataframe(Activedata.head(300))
+
     #折り返し線を追加
     st.markdown("---")
 
     #インデックスが300スタートなのでリセット
+    #遅れ時間の計算のため
     data = data.reset_index(drop=True)
-
-    #start_index, end_index = visualize_stock_trend(data)#在庫可視化
+    #st.dataframe(data.head(300))
 
     # SHAP計算
     #explainer = shap.TreeExplainer(rf_model, feature_dependence='tree_path_dependent', model_output='margin')
@@ -352,9 +386,7 @@ def step2(data, rf_model, X, start_index, end_index):
     start_index_int = start_index[0]#-300
     end_index_int = end_index[0]#-300
 
-    #start = start_index_int#0#0
-    #end = end_index_int#2999
-
+    #在庫データフレーム
     df = data.iloc[start_index_int:end_index_int]
     print(df.head())
 
@@ -426,13 +458,13 @@ def step2(data, rf_model, X, start_index, end_index):
 
 
     # カラーマップの選択
-    cmap = 'RdBu_r'  # 青から赤に変化するカラーマップ
+    #cmap = 'RdBu_r'  # 青から赤に変化するカラーマップ
 
     #df2_subset.index = df2_subset.index.strftime('%Y-%m-%d-%H')
     df.columns = df2.index.strftime('%Y-%m-%d-%H')
 
     #行の並びを反転
-    df_reversed = df.iloc[::-1]
+    #df_reversed = df.iloc[::-1]
 
     # インデックスをリセット
     df2_subset_df = df2.to_frame().reset_index()
@@ -451,89 +483,78 @@ def step2(data, rf_model, X, start_index, end_index):
     #日時列
     temp_time = df_transposed.reset_index(drop=True)
 
-    first_datetime_df1 = data['日時'].iloc[0]
-    first_datetime_df2 = temp_time['日時'].iloc[0]
-    first_datetime_df3 = df_transposed['日時'].iloc[0]
-    print(f"dataの日時列の最初の値: {first_datetime_df1}")
-    print(f"df_transposedの日時列の最初の値: {first_datetime_df3}")
-    print(f"temp_timeの日時列の最初の値: {first_datetime_df2}")
+    #確認用
+    #first_datetime_df1 = data['日時'].iloc[0]
+    #first_datetime_df2 = temp_time['日時'].iloc[0]
+    #first_datetime_df3 = df_transposed['日時'].iloc[0]
+    #print(f"dataの日時列の最初の値: {first_datetime_df1}")
+    #print(f"df_transposedの日時列の最初の値: {first_datetime_df3}")
+    #print(f"temp_timeの日時列の最初の値: {first_datetime_df2}")
 
-    # data1とdata2を結合
+    #! 日時列と説明変数を結合
     merged_df = pd.concat([temp_time[['日時']], zzz], axis=1)
-
-    # 関数を呼び出して表示
-    #display_data_app(df2_subset_df, df_transposed, merged_df)
     
-    line_data = df2_subset_df
-    bar_data = df_transposed
-    df2 = merged_df
+    #! 変数名を変更する
+    line_data = df2_subset_df #在庫データ
+    bar_data = df_transposed #SHAP値
+    df2 = merged_df #元データ
     
+    #! 在庫データのデータフレーム化
     line_df = pd.DataFrame(line_data)
     line_df['日時'] = pd.to_datetime(line_df['日時'], format='%Y%m%d%H')
 
+    #! SHAP値のデータフレーム化
     bar_df = pd.DataFrame(bar_data)
     bar_df['日時'] = pd.to_datetime(bar_df['日時'])
     
+    #! 元データのデータフレーム化
     df2 = pd.DataFrame(df2)
     df2['日時'] = pd.to_datetime(df2['日時'])
 
-    # サイドバーに使い方を表示
-    #st.sidebar.header("使い方")
-    #st.sidebar.markdown("""
-    #1. 上部の折れ線グラフで全体のデータ推移を確認できます。
-    #2. 下部の棒グラフでは、特定の日時におけるデータを詳細に表示します。
-    #3. スライドバーで日時を選択し、結果が動的に変更されます。
-    #""")
-
-    # 上に折れ線グラフ
-    fig_line = go.Figure()
-    for var in line_df.columns[1:]:
-        fig_line.add_trace(go.Scatter(x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'), y=line_df[var], mode='lines+markers', name=var))
-        
-    print("増減")
-    print(y_pred_subset)
+    #確認
+    #st.dataframe(line_df.head(300))
+    #print("増減")
+    #print(y_pred_subset)
     #st.dataframe(y_pred_subset)
-    print("ベース")
-    print(y_base_subset)
+    #print("ベース")
+    #print(y_base_subset)
     #st.dataframe(y_base_subset)
+
+    #! 開示時間と終了時間を計算
+    start_datetime = bar_df['日時'].min().to_pydatetime()
+    end_datetime = bar_df['日時'].max().to_pydatetime()
+
+    #Activedata = Activedata[(Activedata['日付'] >= start_datetime) & 
+                                     # (Activedata['日付'] <= end_datetime)]
     
-    #在庫増減数なので、在庫数を計算する時は、以下の処理をする
-    # 2つ目の折れ線グラフ
-    fig_line.add_trace(go.Scatter(
-        x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),#df2_subset.index.strftime('%Y-%m-%d-%H'),
-        #★
-        y=y_pred_subset+y_base_subset,
-        #y=y_pred_subset+df2_subset.shift(1),
-        mode='lines+markers',
-        name='AI推定値'
-    ))
-
-    st.header('在庫推移')
-    fig_line.update_layout(
-        #title="在庫推移",
-        xaxis_title="日時",
-        yaxis_title="在庫数（箱）",
-        height=500,  # 高さを調整
-        width=100,   # 幅を調整
-        margin=dict(l=0, r=0, t=30, b=0)
-    )
-
-    # 折れ線グラフを表示
-    st.plotly_chart(fig_line, use_container_width=True)
-
-    # スライドバーをメインエリアに配置
-    min_datetime = bar_df['日時'].min().to_pydatetime()
-    max_datetime = bar_df['日時'].max().to_pydatetime()
+    # bar_dfの時間帯を抽出
+    bar_times = bar_df['日時']
     
-    print(min_datetime,max_datetime)
-    
-    return min_datetime, max_datetime, bar_df, df2
+    #st.dataframe(bar_times)
+    #st.dataframe(Activedata['日付'])
 
-    # 全体SHAPプロットの生成
+    # Activedataの時間帯を抽出し、bar_dfの時間帯と一致するものをフィルタリング
+    Activedata = Activedata[Activedata['日付'].isin(bar_times)]
+
+    #! ヘッダーを表示
+    st.header('在庫情報')
+    #! 在庫可視化
+    plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata)
+
+    #st.dataframe(Activedata)
+    
+    #確認；開始時刻と終了時刻
+    #print(strat_datetime,end_datetime)
+
+    #確認：全体SHAPプロットの生成
     #fig, ax = plt.subplots()
     #shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
-    # プロットをStreamlitで表示
+    #プロットをStreamlitで表示
     #st.pyplot(fig)
+    
+    #! STEP3の要因分析結果の可視化のために、開始日時（strat_datetime）と終了日時（end_datetime）、
+    #! SHAP値（bar_df）、元データ値（df2）を出力する
+    return start_datetime, end_datetime, bar_df, df2
     
 def step3(bar_df, df2, selected_datetime):
 
@@ -557,7 +578,7 @@ def step3(bar_df, df2, selected_datetime):
     #     st.write(f"最大値: {bar_df[column].max()}")
     #     st.write("---")
 
-    # # 折り返し線を追加
+    #! 折り返し線を追加
     st.markdown("---")
 
     st.header('要因分析')
@@ -572,10 +593,10 @@ def step3(bar_df, df2, selected_datetime):
     if not filtered_df1.empty:
         st.write(f"##### 選択された日時: {selected_datetime}")
 
-        # 複数行の文章を表示
-        #st.info("""
-        #🔖 『解きたい問題の解釈』を行っているわけではなく、あくまで 『学習済みAIモデルの解釈』の結果を表示しています。
-        #""")
+        # 3つの列を作成
+        col1, col2 = st.columns(2)
+        col1.metric(label="実在庫数", value=100, delta="1 mph")
+        col2.metric(label="AI推定在庫数（仮）", value=100)
 
         # データを長い形式に変換
         df1_long = filtered_df1.melt(id_vars=['日時'], var_name='変数', value_name='寄与度（SHAP値）')
@@ -614,15 +635,42 @@ def step3(bar_df, df2, selected_datetime):
             margin=dict(l=0, r=0, t=30, b=0)
         )
 
-        # 横棒グラフを表示
-        #st.plotly_chart(fig_bar, use_container_width=True)
-
-        #display_shap_contributions(df1_long)
-
         # タブの作成
         tab1, tab2 = st.tabs(["ランキング表示", "棒グラフ表示"])
 
         with tab1:
+
+            # もし 'Unnamed: 0' や '日時' が存在する場合にのみ削除する
+            columns_to_drop = []
+            if 'Unnamed: 0' in df2.columns:
+                columns_to_drop.append('Unnamed: 0')
+            if '日時' in df2.columns:
+                columns_to_drop.append('日時')
+
+            # 不要な列を削除します
+            df2_cleaned = df2.drop(columns=columns_to_drop)
+
+            # 平均値と中央値を計算
+            average_values = df2_cleaned.mean()
+            median_values = df2_cleaned.median()
+
+            # DataFrameに変換
+            average_df = pd.DataFrame(average_values, columns=["平均値"])
+            average_df.index.name = '変数'
+            median_df = pd.DataFrame(median_values, columns=["中央値"])
+            median_df.index.name = '変数'
+
+            #統合
+            df1_long = pd.merge(df1_long, average_df, left_on="変数", right_on="変数", how="left")
+            df1_long = pd.merge(df1_long, median_df, left_on="変数", right_on="変数", how="left")
+
+            # SHAPデータフレームを繰り返し処理し、対応する元要因データフレームの値を追加
+            for index, row in df1_long.iterrows():
+                variable = row['変数']  # SHAPデータフレームの「変数」列を取得
+                if variable in filtered_df2.columns:  # 変数名が元要因データフレームの列名に存在する場合
+                    # SHAPデータフレームの現在の行に元要因の値を追加
+                    df1_long.at[index, '元要因値'] = filtered_df2.loc[filtered_df2['日時'] == row['日時'], variable].values[0]
+
             display_shap_contributions(df1_long)
 
         with tab2:
