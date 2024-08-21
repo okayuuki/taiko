@@ -179,7 +179,7 @@ def show_analysis(product):
         columns_order = find_columns_with_word_in_name(lagged_features, '発注かんばん数（t-')
         # columns_printは'発注かんばん'を含む列名
         columns_reception = find_columns_with_word_in_name(lagged_features, '納入かんばん数（t-')
-        lagged_features['納入フレ（負は未納や正は挽回納入数を表す）'] = lagged_features[columns_reception] - lagged_features[columns_order]
+        lagged_features[f'納入フレ（t-{best_range_reception}~t-{best_range_reception + best_range_order}）'] = lagged_features[columns_reception] - lagged_features[columns_order]
 
         #display_corr_matrix(lagged_features)
         #st.dataframe(lagged_features.head(300))
@@ -215,8 +215,8 @@ def show_analysis(product):
 
         #st.dataframe(lagged_features.head(300))
 
-        data = data.rename(columns={'仕入先便到着フラグ': '仕入先便到着状況'})#コラム名変更
-        data['定期便出発状況']=data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50
+        data = data.rename(columns={'仕入先便到着フラグ': f'仕入先便到着状況（t-{best_range_reception}~t-{best_range_reception + best_range_order}）'})#コラム名変更
+        data['定期便出発状況（t-4~t-6）']=data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50
 
         print(data.columns)
 
@@ -224,9 +224,9 @@ def show_analysis(product):
         data[f'No1_発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）'] = data[f'発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）']
         data[f'No2_計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）']
         data[f'No3_計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）']
-        data['No4_納入フレ（負は未納や正は挽回納入数を表す）'] = data['納入フレ（負は未納や正は挽回納入数を表す）']
-        data['No5_仕入先便到着状況'] = data['仕入先便到着状況']
-        data['No6_定期便出発状況'] = data['定期便出発状況']
+        data[f'No4_納入フレ（t-{best_range_reception}~t-{best_range_reception + best_range_order}）'] = data[f'納入フレ（t-{best_range_reception}~t-{best_range_reception + best_range_order}）']
+        data[f'No5_仕入先便到着状況（t-{best_range_reception}~t-{best_range_reception + best_range_order}）'] = data[f'仕入先便到着状況（t-{best_range_reception}~t-{best_range_reception + best_range_order}）']
+        data['No6_定期便出発状況（t-4~t-6）'] = data['定期便出発状況（t-4~t-6）']
         data[f'No7_間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）']
         data[f'No8_部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）']
         data[f'No9_定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）'] = data[f'定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）']
@@ -235,9 +235,9 @@ def show_analysis(product):
         X = data[[f'No1_発注かんばん数（t-{best_range_order}~t-{best_range_order*2}）',
                   f'No2_計画組立生産台数_加重平均（t-{end_hours_ago}~t-{best_range_order}）',
                   f'No3_計画達成率_加重平均（t-{end_hours_ago}~t-{best_range_order}）',
-                  'No4_納入フレ（負は未納や正は挽回納入数を表す）',
-                  'No5_仕入先便到着状況',
-                  'No6_定期便出発状況',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
+                  f'No4_納入フレ（t-{best_range_reception}~t-{best_range_reception + best_range_order}）',
+                  f'No5_仕入先便到着状況（t-{best_range_reception}~t-{best_range_reception + best_range_order}）',
+                  'No6_定期便出発状況（t-4~t-6）',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
                   f'No7_間口の平均充足率（t-{end_hours_ago}~t-{best_range_order}）',#f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',
                   f'No8_部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{best_range_order}）',#f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',
                   f'No9_定期便にモノ無し（t-{end_hours_ago}~t-{best_range_order}）']]
@@ -247,16 +247,16 @@ def show_analysis(product):
         #y = data[f'在庫増減数(t)']
 
         # DataFrame に変換（列名を指定する）
-        y = pd.DataFrame(y, columns=[f'在庫増減数（t-0~t-{best_range_order}）'])
+        #y = pd.DataFrame(y, columns=[f'在庫増減数（t-0~t-{best_range_order}）'])
 
         # StandardScalerを使用して標準化
-        scaler = StandardScaler()
-        y_scaled = pd.DataFrame(scaler.fit_transform(y), columns=y.columns)
+        #scaler = StandardScaler()
+        #y_scaled = pd.DataFrame(scaler.fit_transform(y), columns=y.columns)
 
-        st.dataframe(X)
+        #st.dataframe(X)
 
         # データを学習データとテストデータに分割
-        X_train, X_test, y_train, y_test = train_test_split(X, y_scaled, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 
         # Lasso回帰モデルの作成
@@ -323,7 +323,7 @@ def show_analysis(product):
         with open("一時保存データ.csv", mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
             data.to_csv(f)
         
-        return data, rf_model, X, y
+        return data, rf_model, X
 
         # データフレームXから100行目から300行目までのデータを選択
         #X_subset = X.iloc[0:3000]
@@ -359,6 +359,9 @@ def step2(data, rf_model, X, start_index, end_index):
     #st.header(product)
     Activedata = Activedata[Activedata['品番'] == product]
 
+    #st.header(start_index)
+    #st.header(end_index)
+
     # 在庫データに合わせて時間粒度を1時間ごとにリサンプリング
     # 内示データを日付ごとに集約して重複を排除
     #Activedata = Activedata.groupby('日付').mean(numeric_only=True).reset_index()
@@ -384,7 +387,7 @@ def step2(data, rf_model, X, start_index, end_index):
 
     # リストから整数に変換
     start_index_int = start_index[0]#-300
-    end_index_int = end_index[0]#-300
+    end_index_int = end_index[0]+1#-300
 
     #在庫データフレーム
     df = data.iloc[start_index_int:end_index_int]
@@ -531,6 +534,7 @@ def step2(data, rf_model, X, start_index, end_index):
     bar_times = bar_df['日時']
     
     #st.dataframe(bar_times)
+    #st.dataframe(bar_df['日時'])
     #st.dataframe(Activedata['日付'])
 
     # Activedataの時間帯を抽出し、bar_dfの時間帯と一致するものをフィルタリング
@@ -541,7 +545,7 @@ def step2(data, rf_model, X, start_index, end_index):
     #! 在庫可視化
     plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata)
 
-    #st.dataframe(Activedata)
+    #st.dataframe(line_df)
     
     #確認；開始時刻と終了時刻
     #print(strat_datetime,end_datetime)
@@ -594,9 +598,9 @@ def step3(bar_df, df2, selected_datetime):
         st.write(f"##### 選択された日時: {selected_datetime}")
 
         # 3つの列を作成
-        col1, col2 = st.columns(2)
-        col1.metric(label="実在庫数", value=100, delta="1 mph")
-        col2.metric(label="AI推定在庫数（仮）", value=100)
+        # col1, col2 = st.columns(2)
+        # col1.metric(label="実在庫数", value=100, delta="1 mph")
+        # col2.metric(label="AI推定在庫数（仮）", value=100)
 
         # データを長い形式に変換
         df1_long = filtered_df1.melt(id_vars=['日時'], var_name='変数', value_name='寄与度（SHAP値）')
@@ -657,7 +661,7 @@ def step3(bar_df, df2, selected_datetime):
             # DataFrameに変換
             average_df = pd.DataFrame(average_values, columns=["平均値"])
             average_df.index.name = '変数'
-            median_df = pd.DataFrame(median_values, columns=["中央値"])
+            median_df = pd.DataFrame(median_values, columns=["いつもの値（中央値）"])
             median_df.index.name = '変数'
 
             #統合

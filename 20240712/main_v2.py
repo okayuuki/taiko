@@ -19,7 +19,7 @@ def load_flag(filename='flag.pkl'):
         return step1_flag, step2_flag, step3_flag
         
 # 中間結果変数を保存する関数
-def save_model_and_data(rf_model, X, data, y, product, filename='model_and_data.pkl'):
+def save_model_and_data(rf_model, X, data,product, filename='model_and_data.pkl'):
     with open(filename, 'wb') as file:
         pickle.dump((rf_model, X, data, product), file)
         print(f"Model and data saved to {filename}")
@@ -27,9 +27,9 @@ def save_model_and_data(rf_model, X, data, y, product, filename='model_and_data.
 # 中間結果変数を読み込む関数
 def load_model_and_data(filename='model_and_data.pkl'):
     with open(filename, 'rb') as file:
-        rf_model, X, data, y, product = pickle.load(file)
+        rf_model, X, data,product = pickle.load(file)
         print(f"Model and data loaded from {filename}")
-        return rf_model, X, data, y, product
+        return rf_model, X, data,product
 
 # 品番情報を表示する関数
 def display_hinban_info(hinban):
@@ -112,10 +112,10 @@ def analysis_page():
         
         # analysis_v1.pyの中で定義されたshow_analysis関数を呼び出す
         # 学習
-        data, rf_model, X, y = analysis_v2.show_analysis(product)
+        data, rf_model, X= analysis_v2.show_analysis(product)
 
         # モデルとデータを保存
-        save_model_and_data(rf_model, X, data, y, product)
+        save_model_and_data(rf_model, X, data, product)
         
         #実行フラグを更新する
         step1_flag = 1
@@ -139,7 +139,7 @@ def analysis_page():
             st.sidebar.success(f"過去に選択された品番: {product}")
             
             # 保存したモデルとデータを読み込む
-            rf_model, X, data, y, product = load_model_and_data()
+            rf_model, X, data, product = load_model_and_data()
 
             display_hinban_info(product)
         
@@ -315,31 +315,6 @@ def main():
     st.sidebar.markdown("---")
 
     if page == "🏠 ホーム":
-
-        import subprocess
-
-        # javacのフルパスを指定してコンパイル
-        compilation = subprocess.run([r"C:\Program Files\Common Files\Oracle\Java\javapath\javac.exe", "HelloWorld.java"], capture_output=True, text=True)
-        #compilation = subprocess.run(["C:/Program Files/Common Files/Oracle/Java/javapath/javac.exe", "HelloWorld.java"], capture_output=True, text=True)
-
-        # コンパイルの結果を確認
-        if compilation.returncode == 0:
-            st.write("Compilation successful")
-            
-            # Javaプログラムの実行
-            execution = subprocess.run([r"C:\Program Files\Common Files\Oracle\Java\javapath\javac.exe", "HelloWorld.java"], capture_output=True, text=True)
-            
-            # 実行結果を表示
-            if execution.returncode == 0:
-                st.write("Execution successful")
-                st.write("Output:")
-                st.write(execution.stdout)
-            else:
-                st.write("Execution failed:")
-                print(execution.stderr)
-        else:
-            st.write("Compilation failed:")
-            print(compilation.stderr)
     
         #アプリ立ち上げ時に分析ページの実行フラグを初期化
         step1_flag = 0
@@ -359,24 +334,24 @@ def main():
         st.title("マニュアル")
 
         # プログレスバーの初期化
-        progress_bar = st.progress(0)
+        #progress_bar = st.progress(0)
 
         # ステータス表示のためのテキスト
-        status_text = st.empty()
+        #status_text = st.empty()
 
         # 進捗状況の更新
-        for i in range(101):
+        #for i in range(101):
             # プログレスバーの進捗を更新
-            progress_bar.progress(i)
+            #progress_bar.progress(i)
             
             # ステータス表示の更新
-            status_text.text(f'Progress: {i}%')
+            #status_text.text(f'Progress: {i}%')
             
             # 処理の遅延をシミュレート
-            time.sleep(0.1)  # 0.1秒間の遅延
+            #time.sleep(0.1)  # 0.1秒間の遅延
 
         # 処理完了後のメッセージ
-        st.success("Processing complete!")
+        #st.success("Processing complete!")
 
 #本スクリプトが直接実行されたときに実行
 if __name__ == "__main__":

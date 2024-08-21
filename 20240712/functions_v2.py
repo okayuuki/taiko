@@ -634,6 +634,9 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
         st.plotly_chart(fig_line, use_container_width=True)
 
     with tab2:
+
+        st.write("AIはデータのみから推定するので間違う場合があります")
+
         # 在庫折れ線グラフの初期化
         fig_line = go.Figure()
 
@@ -684,46 +687,46 @@ def display_shap_contributions( df1_long):
     # マッピングを '変数' 列に基づいて '要因名' 列に適用する関数を定義
     def map_factor_positive(variable):
         if variable.startswith("No1_"):
-            return "いつもより「発注かんばん数が多い」"
+            return "「発注かんばん数が多い」"
         elif variable.startswith("No2_"):
-            return "いつもより「計画組立生産台数が少ない」"
+            return "「計画組立生産台数が少ない」"
         elif variable.startswith("No3_"):
-            return "いつもより「稼働率が低い」"
+            return "「稼働率が低い」"
         elif variable.startswith("No4_"):
-            return "いつもより「挽回納入数が多い」"
+            return "「納入数が多い（挽回納入）」"
         elif variable.startswith("No5_"):
-            return "いつもより「仕入先便が早着している」"
+            return "「仕入先便が早着している」"
         elif variable.startswith("No6_"):
-            return "いつもより「定期便が早着している」"
+            return "「定期便が早着している」"
         elif variable.startswith("No7_"):
-            return "いつもより「間口？？」"
+            return "「間口の充足率が低い（これ在庫増につながる？？）」"
         elif variable.startswith("No8_"):
-            return "いつもより「部品置き場からの入庫数が多い」"
+            return "「部品置き場からの入庫数が多い」"
         elif variable.startswith("No9_"):
-            return "いつもより「定期便にモノがある」"
+            return "「定期便にモノがある」"
         else:
             return None  # 一致するものがない場合は None を返す
         
     # マッピングを '変数' 列に基づいて '要因名' 列に適用する関数を定義
     def map_factor_negative(variable):
         if variable.startswith("No1_"):
-            return "いつもより「発注かんばんが少ない」"
+            return "「発注かんばんが少ない」"
         elif variable.startswith("No2_"):
-            return "いつもより「計画組立生産台数が多い」"
+            return "「計画組立生産台数が多い」"
         elif variable.startswith("No3_"):
-            return "いつもより「稼働率が高い」"
+            return "「稼働率が高い」"
         elif variable.startswith("No4_"):
-            return "いつもより「未納"
+            return "「納入数が少ない（未納）」"
         elif variable.startswith("No5_"):
-            return "いつもより「仕入先便の遅着」"
+            return "「仕入先便の遅着」"
         elif variable.startswith("No6_"):
-            return "いつもより「定期便の遅着」"
+            return "「定期便の遅着」"
         elif variable.startswith("No7_"):
-            return "いつもより「間口の充足率が高い」"
+            return "「間口の充足率が高い」"
         elif variable.startswith("No8_"):
-            return "いつもより「部品置き場の滞留」"
+            return "「部品置き場の滞留」"
         elif variable.startswith("No9_"):
-            return "いつもより「定期便にモノが無い」"
+            return "「定期便にモノが無い」"
         else:
             return None  # 一致するものがない場合は None を返す
         
@@ -733,6 +736,28 @@ def display_shap_contributions( df1_long):
         if match:
             return match.groups()
         return None, None
+    
+    def update_factor_values(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        この関数は、DataFrameの「要因名」列の内容に基づいて「元要因値」列を更新します。
+        """
+        # 要因名と追加する元要因値の辞書を作成
+        conditions = {
+            '発注かんばん': '合計発注かんばん数=',
+            '納入数': '合計納入フレ数=',
+            '計画組立生産台数': '合計計画組立生産台数=',
+            '稼働率': '平均稼働率',
+            '部品置き場': '部品置き場からの入庫率=',
+            '定期便': '定期便率=',
+            '間口': '間口の充足率=',
+            '仕入先便': '仕入先着発フラグ='
+        }
+
+        # 各条件に基づいて「元要因値」を更新
+        for key, value in conditions.items():
+            df.loc[df['要因名'].str.contains(key), '元要因値'] = value + df['元要因値'].astype(str)
+        
+        return df
     
     df1_long['start'], df1_long['end'] = zip(*df1_long['変数'].apply(extract_time_range))
     df1_long['日時'] = pd.to_datetime(df1_long['日時'])
@@ -774,10 +799,20 @@ def display_shap_contributions( df1_long):
     #st.dataframe(top_positive)
 
     # 順位、変数名、値だけを表示し、インデックスは消す
-    top_positive = top_positive[['順位', '要因名','期間','元要因値','中央値','寄与度（SHAP値）']]
-    top_negative = top_negative[['順位', '要因名','期間','元要因値','中央値','寄与度（SHAP値）']]
+    top_positive = top_positive[['順位', '要因名','期間','元要因値','いつもの値（中央値）','寄与度（SHAP値）']]
+    top_negative = top_negative[['順位', '要因名','期間','元要因値','いつもの値（中央値）','寄与度（SHAP値）']]
+
+    # 寄与度を割合表記に変更
+    top_positive['寄与度（SHAP値）割合'] = (top_positive['寄与度（SHAP値）'] / top_positive['寄与度（SHAP値）'].sum()) * 100
+    # 寄与度を割合表記に変更
+    top_negative['寄与度（SHAP値）割合'] = (top_negative['寄与度（SHAP値）'] / top_negative['寄与度（SHAP値）'].sum()) * 100
+
 
     #st.dataframe(top_positive)
+    #st.dataframe(top_negative)
+
+    top_positive = update_factor_values(top_positive)
+    top_negative = update_factor_values(top_negative)
 
     # スタイリングを適用（列名に色を変更）
     styled_positive = top_positive.style.pipe(set_header_color, 'lightcoral')
