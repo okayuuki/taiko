@@ -231,14 +231,16 @@ def analysis_page():
         
         if start_index == [] or end_index == []:
             st.sidebar.error("非稼動日を選択しています。")
-            step2_flag = 2
+            step2_flag = 2 #2は非稼働日を表す
             
         else:
             st.sidebar.success(f"開始日時: {start_datetime}")
             st.sidebar.success(f"終了日時: {end_datetime}")
             #st.sidebar.success(f"開始日時: {start_datetime}, インデックス: {start_index}")
             #st.sidebar.success(f"終了日時: {end_datetime}, インデックス: {end_index}")
-            min_datetime, max_datetime, bar_df, df2 = analysis_v2.step2(data, rf_model, X, start_index, end_index)
+            bar_df, df2, line_df = analysis_v2.step2(data, rf_model, X, start_index, end_index, step3_flag)
+            min_datetime = start_datetime
+            max_datetime = end_datetime
             step2_flag = 1
 
             # モデルとデータを保存
@@ -254,7 +256,8 @@ def analysis_page():
         elif step2_flag == 1:
             st.sidebar.success(f"開始日時: {start_datetime}")
             st.sidebar.success(f"終了日時: {end_datetime}")
-            min_datetime, max_datetime, bar_df, df2 = analysis_v2.step2(data, rf_model, X, start_index, end_index)
+            min_datetime = start_datetime
+            max_datetime = end_datetime
             step2_flag = 1
 
             # モデルとデータを保存
@@ -295,9 +298,14 @@ def analysis_page():
         
     if submit_button_step3:
         step3_flag = 1
-        st.sidebar.success(f"選択された日時: {selected_datetime}")
-        
-        analysis_v2.step3(bar_df, df2, selected_datetime)
+
+        bar_df, df2, line_df = analysis_v2.step2(data, rf_model, X, start_index, end_index, step3_flag, selected_datetime)
+        zaikosu = line_df.loc[line_df['日時'] == selected_datetime, '在庫数（箱）'].values[0]
+        analysis_v2.step3(bar_df, df2, selected_datetime, line_df)
+
+        st.sidebar.success(f"選択された日時: {selected_datetime}")#、在庫数（箱）：{int(zaikosu)}")
+
+        step3_flag = 0
         
         # モデルとデータを保存
         save_flag(step1_flag, step2_flag, step3_flag)
@@ -315,6 +323,20 @@ def main():
     st.sidebar.markdown("---")
 
     if page == "🏠 ホーム":
+
+        # カスタムCSSを適用して画面サイズを設定する
+        st.markdown(
+            """
+            <style>
+            .main .block-container {
+                max-width: 70%;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
     
         #アプリ立ち上げ時に分析ページの実行フラグを初期化
         step1_flag = 0

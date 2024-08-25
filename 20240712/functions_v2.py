@@ -435,70 +435,6 @@ def drop_columns_with_word(df, word):
     columns_to_drop = [column for column in df.columns if word in column]
     return df.drop(columns=columns_to_drop)
 
-#特徴量エンジニアリング
-def feature_engineering(df):
-    # 新しい '荷役時間' 列を計算
-    df['荷役時間'] = df['荷役時間(t-4)'] + df['荷役時間(t-5)'] + df['荷役時間(t-6)']
-    #df = df.drop(columns=['荷役時間(t-4)'])
-    #df = df.drop(columns=['荷役時間(t-5)'])
-    #df = df.drop(columns=['荷役時間(t-6)'])
-    
-    # 新しい列を初期化
-    df['部品置き場の入庫滞留状況'] = 0
-    #df['部品置き場からの入庫'] = 0
-    #df['部品置き場で滞留'] = 0
-    df['定期便にモノ無し'] = 0
-    
-    # 条件ロジックを適用
-    for index, row in df.iterrows():
-        if row['荷役時間'] == 0 and row['入庫かんばん数（t）'] > 0:
-            df.at[index, '部品置き場の入庫滞留状況'] = 1
-            #df.at[index, '部品置き場からの入庫'] = 1#row['入庫かんばん数（t）']
-        elif row['荷役時間'] > 0 and row['入庫かんばん数（t）'] == 0:
-            df.at[index, '部品置き場の入庫滞留状況'] = 0
-            #df.at[index, '部品置き場で滞留'] = 1
-            df.at[index, '定期便にモノ無し'] = 1
-    
-    return df
-
-# 過去X時間前からY時間前前までの平均生産台数_加重平均済を計算する関数
-def calculate_window_width(data, start_hours_ago, end_hours_ago, timelag, reception_timelag):
-    data = data.sort_values(by='日時')
-    # 生産台数の加重平均を計算
-    data[f'生産台数_加重平均（t-{end_hours_ago}~t-{timelag}）'] = data['生産台数_加重平均済'].rolling(window=start_hours_ago+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    # 計画生産台数の加重平均を計算
-    data[f'計画組立生産台数_加重平均（t-{end_hours_ago}~t-{timelag}）'] = data['生産台数_加重平均済'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    # 計画生産台数の加重平均を計算
-    data[f'計画達成率_加重平均（t-{end_hours_ago}~t-{timelag}）'] = data['計画達成率_加重平均済'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    # 入庫かんばん数の合計を計算
-    data[f'入庫かんばん数（t-{end_hours_ago}~t-{timelag}）'] = data['入庫かんばん数（t）'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    # 出庫かんばん数の合計を計算
-    data[f'出庫かんばん数（t-{end_hours_ago}~t-{timelag}）'] = data['出庫かんばん数（t）'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    # 在庫増減数の合計を計算
-    data[f'在庫増減数（t-{end_hours_ago}~t-{timelag}）'] = data['在庫増減数（t）'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    # 発注かんばん数の合計を計算
-    data[f'発注かんばん数（t-{timelag}~t-{timelag*2}）'] = data['発注かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(timelag)
-    # 納入かんばん数の合計を計算
-    data[f'納入かんばん数（t-{reception_timelag}~t-{timelag+reception_timelag}）'] = data['納入かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(timelag)
-    # 在庫数（箱）のシフト
-    data[f'在庫数（箱）（t-{timelag}）'] = data['在庫数（箱）'].shift(timelag)
-    
-    data[f'間口_A1の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_A1'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    data[f'間口_A2の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_A2'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    data[f'間口_B1の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B1'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    data[f'間口_B2の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B2'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    data[f'間口_B3の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B3'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    data[f'間口_B4の充足率（t-{end_hours_ago}~t-{timelag}）'] = data['在庫数（箱）合計_B4'].rolling(window=timelag+1-end_hours_ago, min_periods=1).sum().shift(end_hours_ago)
-    data[f'間口の平均充足率（t-{end_hours_ago}~t-{timelag}）'] = data[f'間口_A1の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_A2の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B1の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B2の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B3の充足率（t-{end_hours_ago}~t-{timelag}）']+data[f'間口_B4の充足率（t-{end_hours_ago}~t-{timelag}）']
-
-    data[f'部品置き場の入庫滞留状況（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場の入庫滞留状況'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
-    #data[f'部品置き場からの入庫（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場からの入庫'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
-    #data[f'部品置き場で滞留（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場で滞留'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
-    data[f'定期便にモノ無し（t-{end_hours_ago}~t-{timelag}）'] = data['定期便にモノ無し'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
-    
-    
-    return data
-    
 def process_shiresakibin_flag(lagged_features, arrival_times_df):
 
     #平均納入時間がtimedelta64[ns]の型になっている。0days 00:00:00みたいな形
@@ -546,6 +482,185 @@ def process_shiresakibin_flag(lagged_features, arrival_times_df):
 
     return lagged_features2
 
+#特徴量エンジニアリング
+def feature_engineering(df):
+    # 新しい '荷役時間' 列を計算
+    df['荷役時間'] = df['荷役時間(t-4)'] + df['荷役時間(t-5)'] + df['荷役時間(t-6)']
+    #df = df.drop(columns=['荷役時間(t-4)'])
+    #df = df.drop(columns=['荷役時間(t-5)'])
+    #df = df.drop(columns=['荷役時間(t-6)'])
+    
+    # 新しい列を初期化
+    df['部品置き場の入庫滞留状況'] = 0
+    #df['部品置き場からの入庫'] = 0
+    #df['部品置き場で滞留'] = 0
+    df['定期便にモノ無し'] = 0
+    
+    # 条件ロジックを適用
+    for index, row in df.iterrows():
+        if row['荷役時間'] == 0 and row['入庫かんばん数（t）'] > 0:
+            df.at[index, '部品置き場の入庫滞留状況'] = 1
+            #df.at[index, '部品置き場からの入庫'] = 1#row['入庫かんばん数（t）']
+        elif row['荷役時間'] > 0 and row['入庫かんばん数（t）'] == 0:
+            df.at[index, '部品置き場の入庫滞留状況'] = 0
+            #df.at[index, '部品置き場で滞留'] = 1
+            df.at[index, '定期便にモノ無し'] = 1
+    
+    return df
+
+# 過去X時間前からY時間前前までの平均生産台数_加重平均済を計算する関数
+#def calculate_window_width(data, start_hours_ago, end_hours_ago, timelag, reception_timelag):
+def calculate_window_width(data, timelag, best_range_order, best_range_reception):
+
+    #lagged_features = calculate_window_width(lagged_features, best_range_end_order, 0, best_range_order, best_range_reception)
+
+    #ソート
+    data = data.sort_values(by='日時')
+
+    #! 発注かんばん数の合計を計算
+    #! t-{timelag}~t-{timelag*2}の期間の合計発注かんばん数を計算する
+    delay = best_range_order
+    data[f'発注かんばん数（t-{delay}~t-{delay+timelag}）'] = data['発注かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+
+    #! 納入かんばん数の合計を計算
+    delay = best_range_reception
+    data[f'納入かんばん数（t-{delay}~t-{delay+timelag}）'] = data['納入かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    
+    columns_order = find_columns_with_word_in_name(data, '発注かんばん数（t-')
+    columns_reception = find_columns_with_word_in_name(data, '納入かんばん数（t-')
+    data[f'納入フレ（t-{best_range_reception}~t-{best_range_reception + timelag}）'] = data[columns_reception] - data[columns_order]
+    
+    #! 生産台数の加重平均を計算
+    delay = 0
+    data[f'生産台数_加重平均（t-{delay}~t-{delay+timelag}）'] = data['生産台数_加重平均済'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    
+    #! 計画生産台数（加重平均したもの）を指定期間で平均したものを計算
+    delay = 0
+    data[f'計画組立生産台数_加重平均（t-{delay}~t-{delay+timelag}）'] = data['生産台数_加重平均済'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    
+    #! 計画生産台数の加重平均を計算
+    delay = 0
+    data[f'計画達成率_加重平均（t-{delay}~t-{delay+timelag}）'] = data['計画達成率_加重平均済'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)
+    
+    #! 入庫かんばん数の合計を計算
+    delay = 0
+    data[f'入庫かんばん数（t-{delay}~t-{delay+timelag}）'] = data['入庫かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    
+    #! 出庫かんばん数の合計を計算
+    delay = 0
+    data[f'出庫かんばん数（t-{delay}~t-{delay+timelag}）'] = data['出庫かんばん数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    
+    #! 在庫増減数の合計を計算
+    data[f'在庫増減数（t-{delay}~t-{delay+timelag}）'] = data['在庫増減数（t）'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    
+    #! 在庫数（箱）のシフト
+    delay = best_range_order
+    data[f'在庫数（箱）（t-{delay}）'] = data['在庫数（箱）'].shift(delay)
+
+    #!
+    delay = best_range_reception
+    #! 期間を指定して4以外の平均値を計算し、4しかない場合は4を出力する関数を定義
+    def calculate_mean_excluding_4(series):
+        filtered_values = series[series != 4]
+        if len(filtered_values) == 0:
+            return 4
+        else:
+            return filtered_values.mean()
+
+    # 仕入先便到着状況（t-{delay}~t-{delay+timelag}）列の計算
+    data[f'仕入先便到着状況（t-{delay}~t-{delay+timelag}）'] = data['仕入先便到着フラグ'].rolling(window=timelag+1, min_periods=1).apply(calculate_mean_excluding_4).shift(delay)
+
+    #! 間口の充足率の計算
+    delay = 0
+    data[f'間口_A1の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_A1'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    data[f'間口_A2の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_A2'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    data[f'間口_B1の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B1'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    data[f'間口_B2の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B2'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    data[f'間口_B3の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B3'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    data[f'間口_B4の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B4'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
+    data[f'間口の平均充足率（t-{delay}~t-{delay+timelag}）'] = data[f'間口_A1の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_A2の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B1の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B2の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B3の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B4の充足率（t-{delay}~t-{delay+timelag}）']
+
+    #! 部品置き場
+    delay = 0
+    data[f'部品置き場の入庫滞留状況（t-{delay}~t-{delay+timelag}）'] = data['部品置き場の入庫滞留状況'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)
+    #data[f'部品置き場からの入庫（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場からの入庫'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
+    #data[f'部品置き場で滞留（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場で滞留'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
+    data[f'定期便にモノ無し（t-{delay}~t-{delay+timelag}）'] = data['定期便にモノ無し'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)
+    
+    
+    return data
+
+def add_common_traces(fig, line_df, Activedata):
+
+    """
+    グラフに共通のライン（0ライン、設計値MIN、設計値MAX）を追加する関数
+
+    Parameters:
+    fig (go.Figure): グラフオブジェクト
+    line_df (pd.DataFrame): 実績データのデータフレーム（日時を含む）
+    Activedata (pd.DataFrame): 設計値データを含むデータフレーム
+
+    Returns:
+    go.Figure: グラフオブジェクト（共通ラインを追加済み）
+    """
+
+    # 0のラインを赤線で追加
+    fig.add_trace(go.Scatter(
+        x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+        y=np.zeros(len(line_df)),  # line_dfの長さに合わせて0の配列を作成
+        mode='lines',
+        name='在庫0',
+        line=dict(color="#D70000", width=3)
+    ))
+
+    # 設計値MINのラインを追加
+    fig.add_trace(go.Scatter(
+        x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+        y=Activedata['設計値MIN'],  
+        mode='lines',
+        name='設計値MIN',
+        line=dict(color="#FFA500", width=3)
+    ))
+
+    # 設計値MAXのラインを追加
+    fig.add_trace(go.Scatter(
+        x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+        y=Activedata['設計値MAX'],  
+        mode='lines',
+        name='設計値MAX',
+        line=dict(color="#32CD32", width=3)
+    ))
+
+    return fig
+
+def calculate_inventory_ratios(line_df, Activedata):
+
+        #例: 列名を統一
+        line_df = line_df.rename(columns={'日時': '日付'})
+        # 日時の形式が同じか確認し、必要ならば変換
+        line_df['日付'] = pd.to_datetime(line_df['日付'])
+        Activedata['日付'] = pd.to_datetime(Activedata['日付'])
+
+        # 日付でデータフレームを結合
+        merged_df = pd.merge(line_df, Activedata, on='日付')
+
+        # 割合の計算
+        zero_inventory = (merged_df['在庫数（箱）'] == 0).sum()
+        below_min_non_zero = ((merged_df['在庫数（箱）'] < merged_df['設計値MIN']) & (merged_df['在庫数（箱）'] > 0)).sum()
+        between_min_max = ((merged_df['在庫数（箱）'] >= merged_df['設計値MIN']) & (merged_df['在庫数（箱）'] <= merged_df['設計値MAX'])).sum()
+        above_max = (merged_df['在庫数（箱）'] > merged_df['設計値MAX']).sum()
+
+        total = zero_inventory + below_min_non_zero + between_min_max + above_max
+
+        ratios = {
+            '在庫0': zero_inventory / total,
+            '過少': below_min_non_zero / total,
+            '正常': between_min_max / total,
+            '過多': above_max / total
+        }
+
+        return ratios
+
 def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
 
     """
@@ -560,55 +675,67 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
     None
     """
 
-    def add_common_traces(fig, line_df, Activedata):
+    filtered_Activedata = Activedata[Activedata['日付'].isin(line_df['日時'])].copy()
+    filtered_Activedata = filtered_Activedata.reset_index(drop=True)
+    
+    # 割合を計算
+    ratios = calculate_inventory_ratios(line_df, filtered_Activedata)
+    
+    # 円グラフを作成
+    pie_data = pd.DataFrame({
+        '在庫状態': list(ratios.keys()),
+        '割合': list(ratios.values())
+    })
 
-        """
-        グラフに共通のライン（0ライン、設計値MIN、設計値MAX）を追加する関数
+    # スライダーを使って縦横のサイズを調整
+    width = 500
+    height =  500
 
-        Parameters:
-        fig (go.Figure): グラフオブジェクト
-        line_df (pd.DataFrame): 実績データのデータフレーム（日時を含む）
-        Activedata (pd.DataFrame): 設計値データを含むデータフレーム
+    # カテゴリごとの色を指定
+    category_colors = {
+       '在庫0': "#D70000",
+       '過少': "#FFA500",
+       '正常': "#0078D7",
+       '過多': "#32CD32"
+    }
 
-        Returns:
-        go.Figure: グラフオブジェクト（共通ラインを追加済み）
-        """
+    # Plotlyでパイチャートを作成
+    fig = px.pie(pie_data, values='割合', names='在庫状態',
+                 color='在庫状態', color_discrete_map=category_colors)
+    fig.update_layout(width=width, height=height)
+    
+    #クリックイベントに基づいて強調を行い、クリックされた時刻を表示するためのJSスクリプトを定義
+    highlight_bar_script = """
+    function highlightBar(data) {
+        var barIndex = data.points[0].pointIndex;
+        var traceIndex = data.points[0].curveNumber;
+        var clickedTime = data.points[0].x;
 
-        # 0のラインを赤線で追加
-        fig.add_trace(go.Scatter(
-            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
-            y=np.zeros(len(line_df)),  # line_dfの長さに合わせて0の配列を作成
-            mode='lines',
-            name='在庫0',
-            line=dict(color="red", width=3)
-        ))
+        // オリジナルの透明度をリセット
+        var update = {'marker.opacity': Array(fig.data[traceIndex].y.length).fill(0.3)};
+        Plotly.restyle('plot', update, [traceIndex]);
 
-        # 設計値MINのラインを追加
-        fig.add_trace(go.Scatter(
-            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
-            y=Activedata['設計値MIN'],  
-            mode='lines',
-            name='設計値MIN',
-            line=dict(color="orange", width=3)
-        ))
+        // クリックされたバーのみ透明度を1に設定
+        var update = {'marker.opacity': 1};
+        Plotly.restyle('plot', update, [traceIndex], barIndex);
+    }
 
-        # 設計値MAXのラインを追加
-        fig.add_trace(go.Scatter(
-            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
-            y=Activedata['設計値MAX'],  
-            mode='lines',
-            name='設計値MAX',
-            line=dict(color="green", width=3)
-        ))
-
-        return fig
+    """
 
     # タブの作成
-    tab1, tab2 = st.tabs(["実績値を確認する", "AI推定値も確認する"])
+    tab1, tab2 = st.tabs(["実績値を確認する", "AI推定値を確認する"])
 
     with tab1:
         # 在庫折れ線グラフの初期化
         fig_line = go.Figure()
+
+        # # 実績の在庫数の折れ線グラフを追加
+        # for var in line_df.columns[1:]:
+        #     fig_line.add_trace(go.Bar(
+        #         x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+        #         y=line_df[var], 
+        #         marker=dict(color='blue', opacity=0.3),
+        #         name=var))
 
         # 実績の在庫数の折れ線グラフを追加
         for var in line_df.columns[1:]:
@@ -626,13 +753,20 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
             xaxis_title="日時",
             yaxis_title="在庫数（箱）",
             height=500,  
-            width=100,   
-            margin=dict(l=0, r=0, t=30, b=0)
+            width=100, 
+            margin=dict(l=0, r=0, t=30, b=0),
+            clickmode='event+select'
         )
 
-        # 折れ線グラフを表示
-        st.plotly_chart(fig_line, use_container_width=True)
+        # Streamlitでレイアウト設定
+        col1, col2 = st.columns([1,3])
 
+        with col1:
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
+        
     with tab2:
 
         st.write("AIはデータのみから推定するので間違う場合があります")
@@ -668,8 +802,183 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
             margin=dict(l=0, r=0, t=30, b=0)
         )
 
-        # 折れ線グラフを表示
-        st.plotly_chart(fig_line, use_container_width=True)
+        # Plotlyのイベントを使用して強調をトリガーし、クリックした時刻を取得して表示
+        st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
+
+def plot_inventory_graph2(line_df, y_pred_subset, y_base_subset, Activedata, highlight_time):
+
+    """
+    在庫情報の折れ線グラフを作成し、Streamlitで表示する関数
+
+    Parameters:
+    line_df (pd.DataFrame): 実績データのデータフレーム（日時を含む）
+    y_pred_subset (pd.Series): 機械学習モデルによる予測在庫数
+    y_base_subset (pd.Series): 基準在庫数（予測に基づく補正後の値）
+
+    Returns:
+    None
+    """
+    
+    filtered_Activedata = Activedata[Activedata['日付'].isin(line_df['日時'])].copy()
+    filtered_Activedata = filtered_Activedata.reset_index(drop=True)
+    
+    # 割合を計算
+    ratios = calculate_inventory_ratios(line_df, filtered_Activedata)
+    
+    # 円グラフを作成
+    pie_data = pd.DataFrame({
+        '在庫状態': list(ratios.keys()),
+        '割合': list(ratios.values())
+    })
+
+    # スライダーを使って縦横のサイズを調整
+    width = 500
+    height =  500
+
+    # カテゴリごとの色を指定
+    category_colors = {
+       '在庫0': "#D70000",
+       '過少': "#FFA500",
+       '正常': "#0078D7",
+       '過多': "#32CD32"
+    }
+
+    # Plotlyでパイチャートを作成
+    fig = px.pie(pie_data, values='割合', names='在庫状態',
+                 color='在庫状態', color_discrete_map=category_colors)
+    fig.update_layout(width=width, height=height)
+    # Streamlitでグラフを表示
+    #st.plotly_chart(fig)
+    
+    #クリックイベントに基づいて強調を行い、クリックされた時刻を表示するためのJSスクリプトを定義
+    highlight_bar_script = """
+    function highlightBar(data) {
+        var barIndex = data.points[0].pointIndex;
+        var traceIndex = data.points[0].curveNumber;
+        var clickedTime = data.points[0].x;
+
+        // オリジナルの透明度をリセット
+        var update = {'marker.opacity': Array(fig.data[traceIndex].y.length).fill(0.3)};
+        Plotly.restyle('plot', update, [traceIndex]);
+
+        // クリックされたバーのみ透明度を1に設定
+        var update = {'marker.opacity': 1};
+        Plotly.restyle('plot', update, [traceIndex], barIndex);
+    }
+
+    """
+
+    # タブの作成
+    tab1, tab2 = st.tabs(["実績値を確認する", "AI推定値も確認する"])
+
+    with tab1:
+        # 在庫折れ線グラフの初期化
+        fig_line = go.Figure()
+
+        # # 実績の在庫数の折れ線グラフを追加
+        # for var in line_df.columns[1:]:
+        #     fig_line.add_trace(go.Bar(
+        #         x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+        #         y=line_df[var], 
+        #         marker=dict(color='blue', opacity=0.3),
+        #         name=var))
+
+        # 実績の在庫数の折れ線グラフを追加
+        for var in line_df.columns[1:]:
+            # 透明度のリストを作成、全て0.3に設定
+            opacity_values = [0.1] * len(line_df)
+
+            highlight_time = pd.to_datetime(highlight_time)  # 例: '2024-08-21 15:00:00'
+
+            highlight_time = highlight_time.strftime('%Y-%m-%d-%H')
+
+            line_color_values = ['rgba(0,0,0,0)'] * len(line_df)  # 透明な色で初期化
+
+            # 指定した日時に対応するインデックスを取得し、透明度を1に設定
+            if highlight_time in line_df['日時'].dt.strftime('%Y-%m-%d-%H').values:
+                highlight_index = line_df['日時'].dt.strftime('%Y-%m-%d-%H').values.tolist().index(highlight_time)
+                opacity_values[highlight_index] = 0.3
+                #line_color_values[highlight_index] = 'black'  # 境界線を青に設定
+
+            # バーチャートを作成し、各バーの透明度と境界線を設定
+            fig_line.add_trace(go.Bar(
+                x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+                y=line_df[var], 
+                marker=dict(color='blue', opacity=opacity_values, 
+                            line=dict(color=line_color_values, width=2)),
+                name=var))
+            
+            # 指定された日時に青い中心線を追加
+            fig_line.add_trace(go.Scatter(
+                x=[highlight_time, highlight_time],
+                y=[0, max(line_df[var].max() for var in line_df.columns[1:])],  # y軸範囲を全体の最大値に設定
+                mode='lines',
+                line=dict(color='blue', width=2),
+                name='中心線'
+            ))
+
+        # 共通のラインを追加
+        fig_line = add_common_traces(fig_line, line_df, Activedata)
+
+        # 折れ線グラフのレイアウトを設定
+        fig_line.update_layout(
+            xaxis_title="日時",
+            yaxis_title="在庫数（箱）",
+            height=500,  
+            width=100,   
+            margin=dict(l=0, r=0, t=30, b=0),
+            clickmode='event+select'
+        )
+
+        # Plotlyのイベントを使用して強調をトリガーし、クリックした時刻を取得して表示
+        #st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
+
+        # Streamlitでレイアウト設定
+        col1, col2 = st.columns([1,3])
+
+        with col1:
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
+        
+    with tab2:
+
+        st.write("AIはデータのみから推定するので間違う場合があります")
+
+        # 在庫折れ線グラフの初期化
+        fig_line = go.Figure()
+
+        # 実績の在庫数の折れ線グラフを追加
+        for var in line_df.columns[1:]:
+            fig_line.add_trace(go.Bar(
+                x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+                y=line_df[var], 
+                marker=dict(color='blue', opacity=0.3),
+                name=var))
+
+        # 機械学習モデルの予測在庫数の折れ線グラフを追加
+        fig_line.add_trace(go.Scatter(
+            x=line_df['日時'].dt.strftime('%Y-%m-%d-%H'),
+            y=y_pred_subset + y_base_subset,
+            mode='lines+markers',
+            name='AI推定値'
+        ))
+
+        # 共通のラインを追加
+        fig_line = add_common_traces(fig_line, line_df, Activedata)
+
+        # 折れ線グラフのレイアウトを設定
+        fig_line.update_layout(
+            xaxis_title="日時",
+            yaxis_title="在庫数（箱）",
+            height=500,  
+            width=100,   
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+
+        # Plotlyのイベントを使用して強調をトリガーし、クリックした時刻を取得して表示
+        st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
 
 def display_shap_contributions( df1_long):
 
@@ -737,28 +1046,6 @@ def display_shap_contributions( df1_long):
             return match.groups()
         return None, None
     
-    def update_factor_values(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        この関数は、DataFrameの「要因名」列の内容に基づいて「元要因値」列を更新します。
-        """
-        # 要因名と追加する元要因値の辞書を作成
-        conditions = {
-            '発注かんばん': '合計発注かんばん数=',
-            '納入数': '合計納入フレ数=',
-            '計画組立生産台数': '合計計画組立生産台数=',
-            '稼働率': '平均稼働率',
-            '部品置き場': '部品置き場からの入庫率=',
-            '定期便': '定期便率=',
-            '間口': '間口の充足率=',
-            '仕入先便': '仕入先着発フラグ='
-        }
-
-        # 各条件に基づいて「元要因値」を更新
-        for key, value in conditions.items():
-            df.loc[df['要因名'].str.contains(key), '元要因値'] = value + df['元要因値'].astype(str)
-        
-        return df
-    
     df1_long['start'], df1_long['end'] = zip(*df1_long['変数'].apply(extract_time_range))
     df1_long['日時'] = pd.to_datetime(df1_long['日時'])
     df1_long['start'] = pd.to_numeric(df1_long['start'])
@@ -799,24 +1086,65 @@ def display_shap_contributions( df1_long):
     #st.dataframe(top_positive)
 
     # 順位、変数名、値だけを表示し、インデックスは消す
-    top_positive = top_positive[['順位', '要因名','期間','元要因値','いつもの値（中央値）','寄与度（SHAP値）']]
-    top_negative = top_negative[['順位', '要因名','期間','元要因値','いつもの値（中央値）','寄与度（SHAP値）']]
+    top_positive = top_positive[['順位', '要因名','期間','要因の値','いつもの値（中央値）','寄与度（SHAP値）']]
+    top_negative = top_negative[['順位', '要因名','期間','要因の値','いつもの値（中央値）','寄与度（SHAP値）']]
 
     # 寄与度を割合表記に変更
     top_positive['寄与度（SHAP値）割合'] = (top_positive['寄与度（SHAP値）'] / top_positive['寄与度（SHAP値）'].sum()) * 100
-    # 寄与度を割合表記に変更
     top_negative['寄与度（SHAP値）割合'] = (top_negative['寄与度（SHAP値）'] / top_negative['寄与度（SHAP値）'].sum()) * 100
 
+    # '順位' 列を整数のまま保持
+    top_positive['順位'] = top_positive['順位'].astype(int)
+    top_negative['順位'] = top_negative['順位'].astype(int)
 
-    #st.dataframe(top_positive)
-    #st.dataframe(top_negative)
+    # '寄与度（SHAP値）' 列を小数点以下第三位までにフォーマット
+    top_positive['寄与度（SHAP値）'] = top_positive['寄与度（SHAP値）'].apply(lambda x: f"{x:.3f}")
+    top_negative['寄与度（SHAP値）'] = top_negative['寄与度（SHAP値）'].apply(lambda x: f"{x:.3f}")
 
-    top_positive = update_factor_values(top_positive)
-    top_negative = update_factor_values(top_negative)
+    # 他のすべての小数列を小数点以下第一位までにフォーマット
+    top_positive = top_positive.applymap(lambda x: f"{x:.1f}" if isinstance(x, (float)) else x)
+    top_negative = top_negative.applymap(lambda x: f"{x:.1f}" if isinstance(x, (float)) else x)
 
-    # スタイリングを適用（列名に色を変更）
+    # '順位' 列を再設定（applymapで影響を受けるため）
+    top_positive['順位'] = top_positive['順位'].astype(int)
+    top_negative['順位'] = top_negative['順位'].astype(int)
+
+    # スタイリングを適用
+    def bar_chart_red(s):
+        return ['background: linear-gradient(90deg, lightcoral {}%, transparent 0%)'.format(val) for val in s]
+    
+    # スタイリングを適用
+    def bar_chart_blue(s):
+        return ['background: linear-gradient(90deg, lightblue {}%, transparent 0%)'.format(val) for val in s]
+    
+    # 提供された辞書に基づいてマッピングを定義
+    mapping = {
+        '発注かんばん': '合計発注かんばん数=',
+        '納入数': '合計納入フレ数（負は未納、正は挽回数を表す）=',
+        '計画組立生産台数': '合計計画組立生産台数=',
+        '稼働率': '平均稼働率=',
+        '部品置き場': '部品置き場からの入庫率=',
+        '定期便': '定期便率=',
+        '間口': '間口の充足率=',
+        '仕入先便': '仕入先着発フラグ='
+    }
+
+    # '要因名'列に基づいて'要因の値'列を更新する関数を定義
+    def update_factor_value(row):
+        for key, value in mapping.items():
+            if key in row['要因名']:
+                return value + str(row['要因の値'])
+        return row['要因の値']
+
+    # データフレーム全体に関数を適用し、'要因の値'列を更新
+    top_positive['要因の値'] = top_positive.apply(update_factor_value, axis=1)
+    top_negative['要因の値'] = top_negative.apply(update_factor_value, axis=1)
+
     styled_positive = top_positive.style.pipe(set_header_color, 'lightcoral')
+    styled_positive = styled_positive.apply(bar_chart_red, subset=['寄与度（SHAP値）割合'])
+
     styled_negative = top_negative.style.pipe(set_header_color, 'lightblue')
+    styled_negative = styled_negative.apply(bar_chart_blue, subset=['寄与度（SHAP値）割合'])
 
     # テーブル表示（インデックスを非表示にする）
     st.subheader('在庫増に関係する要因ランキング')
@@ -824,6 +1152,7 @@ def display_shap_contributions( df1_long):
 
     st.subheader('在庫減に関係する要因ランキング')
     st.write(styled_negative.hide(axis="index").to_html(), unsafe_allow_html=True)
+    
 
 #def visualize_stock_trend(data):
 #

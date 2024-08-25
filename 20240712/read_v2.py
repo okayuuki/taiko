@@ -116,16 +116,17 @@ def process_Activedata():
         # 結果をリストに追加
         all_data.append(df_melted)
 
-    # すべてのデータフレームを統合
+    #! すべてのデータフレームを統合
     df_final = pd.concat(all_data, ignore_index=True)
 
-    # 週最大日量数の計算
+    #! 週最大日量数の計算
     df_final['週最大日量数'] = df_final.groupby(['品番', '週番号'])['日量数'].transform('max')
     df_final['週最大日量数（箱数）'] = df_final['週最大日量数']//df_final['収容数']
 
-    #設計値MIN
-    df_final['設計値MIN'] = 0.1*(df_final['週最大日量数（箱数）']*df_final['サイクル間隔']*(1+df_final['サイクル情報'])/df_final['サイクル回数'])
-    df_final['設計値MAX'] = df_final['設計値MIN'] + df_final['週最大日量数（箱数）']/df_final['サイクル回数']
+    #! 設計値MIN（小数点以下を切り上げ）
+    df_final['設計値MIN'] = np.ceil(0.1*(df_final['週最大日量数（箱数）']*df_final['サイクル間隔']*(1+df_final['サイクル情報'])/df_final['サイクル回数'])).astype(int)
+    #! 設計値MAX（小数点以下を切り上げ）
+    df_final['設計値MAX'] = df_final['設計値MIN'] + np.ceil(df_final['週最大日量数（箱数）']/df_final['サイクル回数']).astype(int)
 
     return df_final
     
