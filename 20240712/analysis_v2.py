@@ -200,7 +200,7 @@ def show_analysis(product):
         #st.dataframe(lagged_features.head(300))
 
         #data = data.rename(columns={'仕入先便到着フラグ': f'仕入先便到着状況（t-{best_range_reception}~t-{best_range_reception + timelag}）'})#コラム名変更
-        data['定期便出発状況（t-4~t-6）']=data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50+data['荷役時間(t-4)']/50
+        data['定期便出発状況（t-4~t-6）']=data['荷役時間(t-4)']/50+data['荷役時間(t-5)']/50+data['荷役時間(t-6)']/50
 
         #確認：実行結果
         st.dataframe(lagged_features.head(300))
@@ -223,7 +223,7 @@ def show_analysis(product):
         data[f'No4_納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）'] = data[f'納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）']
         
         delay_No5 = best_range_reception
-        timelag_No5 = timelag
+        timelag_No5 = 2
         data[f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）'] = data[f'仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）']
         
         data['No6_定期便出発状況（t-4~t-6）'] = data['定期便出発状況（t-4~t-6）']
@@ -559,10 +559,10 @@ def step2(data, rf_model, X, start_index, end_index, step3_flag, highlight_time=
     #print(strat_datetime,end_datetime)
 
     #確認：全体SHAPプロットの生成
-    fig, ax = plt.subplots()
-    shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
+    #fig, ax = plt.subplots()
+    #shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
     #プロットをStreamlitで表示
-    st.pyplot(fig)
+    #st.pyplot(fig)
     
     #! STEP3の要因分析結果の可視化のために、開始日時（strat_datetime）と終了日時（end_datetime）、
     #! SHAP値（bar_df）、元データ値（df2）を出力する

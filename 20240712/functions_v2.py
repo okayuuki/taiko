@@ -499,7 +499,7 @@ def feature_engineering(df):
     # 条件ロジックを適用
     for index, row in df.iterrows():
         if row['荷役時間'] == 0 and row['入庫かんばん数（t）'] > 0:
-            df.at[index, '部品置き場の入庫滞留状況'] = 1
+            df.at[index, '部品置き場の入庫滞留状況'] = row['入庫かんばん数（t）']
             #df.at[index, '部品置き場からの入庫'] = 1#row['入庫かんばん数（t）']
         elif row['荷役時間'] > 0 and row['入庫かんばん数（t）'] == 0:
             df.at[index, '部品置き場の入庫滞留状況'] = 0
@@ -568,21 +568,22 @@ def calculate_window_width(data, timelag, best_range_order, best_range_reception
             return filtered_values.mean()
 
     # 仕入先便到着状況（t-{delay}~t-{delay+timelag}）列の計算
-    data[f'仕入先便到着状況（t-{delay}~t-{delay+timelag}）'] = data['仕入先便到着フラグ'].rolling(window=timelag+1, min_periods=1).apply(calculate_mean_excluding_4).shift(delay)
+    timelag_kari = 2
+    data[f'仕入先便到着状況（t-{delay}~t-{delay+timelag_kari}）'] = data['仕入先便到着フラグ'].rolling(window=timelag_kari+1, min_periods=1).apply(calculate_mean_excluding_4).shift(delay)
 
     #! 間口の充足率の計算
     delay = 0
-    data[f'間口_A1の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_A1'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
-    data[f'間口_A2の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_A2'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
-    data[f'間口_B1の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B1'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
-    data[f'間口_B2の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B2'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
-    data[f'間口_B3の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B3'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
-    data[f'間口_B4の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B4'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
-    data[f'間口の平均充足率（t-{delay}~t-{delay+timelag}）'] = data[f'間口_A1の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_A2の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B1の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B2の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B3の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B4の充足率（t-{delay}~t-{delay+timelag}）']
+    data[f'間口_A1の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_A1'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)/2592
+    data[f'間口_A2の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_A2'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)/1668
+    data[f'間口_B1の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B1'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)/827
+    data[f'間口_B2の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B2'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)/466
+    data[f'間口_B3の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B3'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)/330
+    data[f'間口_B4の充足率（t-{delay}~t-{delay+timelag}）'] = data['在庫数（箱）合計_B4'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)/33
+    data[f'間口の平均充足率（t-{delay}~t-{delay+timelag}）'] = (data[f'間口_A1の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_A2の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B1の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B2の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B3の充足率（t-{delay}~t-{delay+timelag}）']+data[f'間口_B4の充足率（t-{delay}~t-{delay+timelag}）'])/6
 
     #! 部品置き場
     delay = 0
-    data[f'部品置き場の入庫滞留状況（t-{delay}~t-{delay+timelag}）'] = data['部品置き場の入庫滞留状況'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)
+    data[f'部品置き場の入庫滞留状況（t-{delay}~t-{delay+timelag}）'] = data['部品置き場の入庫滞留状況'].rolling(window=timelag+1, min_periods=1).sum().shift(delay)
     #data[f'部品置き場からの入庫（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場からの入庫'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
     #data[f'部品置き場で滞留（t-{end_hours_ago}~t-{timelag}）'] = data['部品置き場で滞留'].rolling(window=timelag+1-end_hours_ago, min_periods=1).mean().shift(end_hours_ago)
     data[f'定期便にモノ無し（t-{delay}~t-{delay+timelag}）'] = data['定期便にモノ無し'].rolling(window=timelag+1, min_periods=1).mean().shift(delay)
@@ -1012,7 +1013,7 @@ def display_shap_contributions( df1_long):
         elif variable.startswith("No8_"):
             return "「部品置き場からの入庫数が多い」"
         elif variable.startswith("No9_"):
-            return "「定期便にモノがある」"
+            return "「定期便にいつもよりモノが多い」"
         else:
             return None  # 一致するものがない場合は None を返す
         
@@ -1035,7 +1036,7 @@ def display_shap_contributions( df1_long):
         elif variable.startswith("No8_"):
             return "「部品置き場の滞留」"
         elif variable.startswith("No9_"):
-            return "「定期便にモノが無い」"
+            return "「定期便にいつもよりモノが少ない」"
         else:
             return None  # 一致するものがない場合は None を返す
         
@@ -1123,10 +1124,12 @@ def display_shap_contributions( df1_long):
         '納入数': '合計納入フレ数（負は未納、正は挽回数を表す）=',
         '計画組立生産台数': '合計計画組立生産台数=',
         '稼働率': '平均稼働率=',
-        '部品置き場': '部品置き場からの入庫率=',
-        '定期便': '定期便率=',
-        '間口': '間口の充足率=',
-        '仕入先便': '仕入先着発フラグ='
+        '部品置き場': '部品置き場からの入庫かんばん数=',
+        '定期便にいつもより': '定期便の荷量が少ない確率=',
+        '定期便の': '実績荷役時間/計画=',
+        '定期便が': '実績荷役時間/計画=',
+        '間口': '全間口の平均充足率=',
+        '仕入先便': '仕入先着発フラグ（0：早着、1：定刻、2：遅着、3：ダイヤ変更、4：便無し）='
     }
 
     # '要因名'列に基づいて'要因の値'列を更新する関数を定義
