@@ -18,13 +18,15 @@ def read_data():
     #確認項目
     #日付にダブりがないか
 
-    #
+    #!-----------------------------------------------------------------------
+    #! ろじれこのデータ
+    #!-----------------------------------------------------------------------
     file_path = '中間成果物/定期便前処理.csv'
     teikibin_df = pd.read_csv(file_path, encoding='shift_jis')
     teikibin_df['日時'] = pd.to_datetime(teikibin_df['日時'])
     
     #!-----------------------------------------------------------------------
-    #!LINKSと自動ラックQRのタイムスタンプをかんばん単位で結合したもの
+    #! 所在管理リードタイムのデータ
     #!-----------------------------------------------------------------------
     file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
     Timestamp_df = pd.read_csv(file_path, encoding='shift_jis')
@@ -41,7 +43,7 @@ def read_data():
     #print(columns)
 
     #!-----------------------------------------------------------------------
-    #!自動ラックの在庫データ
+    #! 自動ラックの在庫推移のデータ
     #!-----------------------------------------------------------------------
     file_path = '中間成果物/在庫推移MBデータ_統合済&特定日時抽出済.csv'
     zaiko_df = pd.read_csv(file_path, encoding='shift_jis')
@@ -51,17 +53,29 @@ def read_data():
     zaiko_df['計測日時'] = pd.to_datetime(zaiko_df['計測日時'], errors='coerce')
     zaiko_df = zaiko_df.rename(columns={'計測日時': '日時'})
 
+    #!------------------------------------------------------------------------
     #! 自動ラックの間口別在庫数や全入庫数のデータ計算
+    #!------------------------------------------------------------------------
     AutomatedRack_Details_df = calculate_AutomatedRack_Details(zaiko_df)
 
+    #!------------------------------------------------------------------------
     #! 仕入先ダイヤ別の早着や遅れ時間を計算
+    #!------------------------------------------------------------------------
     arrival_times_df = calculate_supplier_truck_arrival_types()
     
+    #!------------------------------------------------------------------------
     #! 組立実績データの加重平均を計算
+    #!------------------------------------------------------------------------
     kumitate_df = calculate_weighted_average_of_kumitate()
 
     #
     return AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df
+
+#def process_teikibin(strat_date, end_date):
+
+#def read_syozailt(strat_date, end_date):
+
+#def read_zaiko(strat_date, end_date):
 
 def process_Activedata():
 
