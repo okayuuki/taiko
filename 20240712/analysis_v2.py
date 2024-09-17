@@ -203,7 +203,7 @@ def show_analysis(product):
         data['定期便出発状況（t-4~t-6）']=data['荷役時間(t-4)']/50+data['荷役時間(t-5)']/50+data['荷役時間(t-6)']/50
 
         #確認：実行結果
-        st.dataframe(lagged_features.head(300))
+        #st.dataframe(lagged_features.head(300))
 
         #! 番号を割り当てる
         delay_No1 = best_range_order
@@ -311,7 +311,7 @@ def show_analysis(product):
         print(f'ランダムフォレスト - テストデータのマイナス方向の最大誤差: {min_err}')
         # 平均誤差を計算
         mae2 = mean_absolute_error(y_test, y_pred)
-        st.header(mae2)
+        #st.header(mae2)
         print(f'ランダムフォレスト - テストデータの平均誤差: {mae2}')
         #--------------------------------------------------------------------------------------------------------
         
