@@ -1,3 +1,4 @@
+#ライブラリのimport
 import os
 import pandas as pd
 import warnings
@@ -325,7 +326,9 @@ def add_part_supplier_info(df, lagged_features, part_number):
     """
     
     # 元のデータフレームから該当品番、仕入先、仕入先工場列を抽出
+    df['仕入先工場名'] = df['仕入先工場名'].replace('', '< NULL >').fillna('< NULL >')
     part_supplier_info = df[['品番', '仕入先名', '仕入先工場名']].drop_duplicates()
+    #st.dataframe(part_supplier_info)
     
     #-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★-★
     # 特定の文字列を含む行を削除
@@ -342,6 +345,8 @@ def add_part_supplier_info(df, lagged_features, part_number):
     # lagged_features に品番と仕入先名を結合
     lagged_features['品番'] = part_number  # 品番を追加
     lagged_features = lagged_features.merge(part_supplier_info, on='品番', how='left')
+
+    #st.dataframe(lagged_features)
 
     return lagged_features
 
@@ -399,6 +404,7 @@ def timedelta_to_hhmmss(td):
 # 仕入先便到着フラグを設定する関数
 def set_arrival_flag(row, columns_delibery_num,columns_delibery_times):
     #print(row['早着'],row[columns_delibery_times],columns_delibery_num,columns_delibery_times)
+    #st.header(row['早着'])
     early = pd.to_datetime(row['早着'], format='%H:%M:%S').time()
     on_time = pd.to_datetime(row['定刻'], format='%H:%M:%S').time()
     late = pd.to_datetime(row['遅着'], format='%H:%M:%S')
@@ -463,6 +469,8 @@ def process_shiresakibin_flag(lagged_features, arrival_times_df):
     lagged_features2['早着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_早着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
     lagged_features2['定刻'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_定刻'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
     lagged_features2['遅着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_遅着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+
+    #st.dataframe(lagged_features2)
 
     # timedelta形式に変換
     lagged_features2[columns_delibery_times] = pd.to_timedelta(lagged_features2[columns_delibery_times])

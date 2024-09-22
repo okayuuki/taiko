@@ -1,4 +1,6 @@
-#ライブラリのimport
+#分析用
+
+#! ライブラリのimport
 import os
 import pandas as pd
 import warnings
@@ -30,10 +32,7 @@ from datetime import datetime, date, time
 import pickle
 from sklearn.preprocessing import StandardScaler
 
-
-# フォント設定の変更（日本語対応のため）
-mpl.rcParams['font.family'] = 'MS Gothic'
-
+#! 自作ライブラリのimport
 #データ読み取り用
 from read_v2 import read_data, process_Activedata
 #データ前処理用
@@ -42,15 +41,24 @@ from functions_v2 import display_corr_matrix, calculate_hourly_counts,calculate_
         find_columns_with_word_in_name,calculate_elapsed_time_since_last_dispatch,timedelta_to_hhmmss,set_arrival_flag, \
             drop_columns_with_word,calculate_window_width,process_shiresakibin_flag,feature_engineering, \
                 plot_inventory_graph, display_shap_contributions,plot_inventory_graph2
+
+#! フォント設定の変更（日本語対応のため）
+mpl.rcParams['font.family'] = 'MS Gothic'
     
 def show_analysis(product):
 
     #!学習期間（解析期間）任意に設定できるように。直近1年とかで
-    start_date = '2023-10-01'
-    end_date = '2024-03-31'
+    # 文字列型
+    # 10月1日がないとダメ？
+    # 品番9031150A015は10月9日があればOK、15日はダメ。品番35989ECB020は15日でもOK
+    start_date = '2023-10-15-00'
+    end_date = '2023-11-12-00'
 
     #! 前処理済みのデータをダウンロード
-    AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df = read_data()
+    AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df = read_data(start_date, end_date)
+    #AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df = read_data()
+
+    #st.dataframe(Timestamp_df)
 
     #! 設定
     order_time_col = '発注日時'
@@ -130,7 +138,7 @@ def show_analysis(product):
         lagged_features = lagged_features_order.join(lagged_features_reception, how='outer')
 
         #確認：実行結果
-        #st.dataframe(lagged_features.head(300))
+        #st.dataframe(lagged_features)
 
         #! 内容：各種情報を追加
         #! lagged_featuresに情報追加
@@ -139,6 +147,7 @@ def show_analysis(product):
         lagged_features['納入かんばん数（t）'] = hourly_counts_of_reception#! 納入かんばん数(t)を計算
         lagged_features = add_part_supplier_info(Timestamp_df, lagged_features, part_number)#! 品番と仕入先名を追加
         lagged_features = lagged_features.rename(columns={'仕入先工場名': '発送場所名'})#! コラム名変更
+        # 発送場所名が空またはNaNの場合に< NULL >に置換
         lagged_features, median_interval = calculate_elapsed_time_since_last_dispatch(lagged_features)#! 過去の出庫からの経過時間を計算
         lagged_features = pd.merge(lagged_features, zaiko_df[['日時', '品番','在庫数（箱）']], on=['品番', '日時'], how='left')#! 自動ラック在庫結合
         lagged_features = pd.merge(lagged_features, AutomatedRack_Details_df, on=['日時'], how='left')#! 1時間ああたりの間口別在庫の計算
@@ -148,7 +157,7 @@ def show_analysis(product):
             else:
                 lagged_features[col] = lagged_features[col].fillna(0)
         lagged_features = process_shiresakibin_flag(lagged_features, arrival_times_df)#! 仕入先便到着フラグ計算
-        lagged_features = pd.merge(lagged_features,kumitate_df[['日時','生産台数_加重平均済','計画生産台数_加重平均済','計画達成率_加重平均済']], on='日時', how='left')# lagged_features と kumitate_df を日時でマージ
+        lagged_features = pd.merge(lagged_features, kumitate_df[['日時','生産台数_加重平均済','計画生産台数_加重平均済','計画達成率_加重平均済']], on='日時', how='left')# lagged_features と kumitate_df を日時でマージ
         
         #確認：実行結果
         #st.dataframe(lagged_features.head(300))
@@ -252,7 +261,7 @@ def show_analysis(product):
                   f'No9_定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）']]
         
         #確認：実行結果
-        st.dataframe(X.head(300))
+        #st.dataframe(X.head(300))
 
         #! 目的変数の定義
         y = data[f'在庫増減数（t-0~t-{timelag}）']

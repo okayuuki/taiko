@@ -7,19 +7,13 @@ import pandas as pd
 from datetime import datetime, time
 import glob
 import re
-import json
-from datetime import datetime, timedelta
-import streamlit as st
 
 
-def read_data(start_date, end_date):
+def read_data():
 
     #学習期間（解析期間）任意に設定できるように
     #start_date = '2023-10-01'
     #end_date = '2024-03-31'
-
-    #start_date = datetime.strptime(start_date, '%Y-%m-%d-%H')
-    #end_date = datetime.strptime(end_date, '%Y-%m-%d-%H')
 
     #確認項目
     #日付にダブりがないか
@@ -30,227 +24,58 @@ def read_data(start_date, end_date):
     file_path = '中間成果物/定期便前処理.csv'
     teikibin_df = pd.read_csv(file_path, encoding='shift_jis')
     teikibin_df['日時'] = pd.to_datetime(teikibin_df['日時'])
-    #teikibin_df= teikibin_df[~((teikibin_df['日時'] >= start_date) & (teikibin_df['日時'] <= end_date))]
-    teikibin_df= teikibin_df.loc[(teikibin_df['日時'] >= start_date) & (teikibin_df['日時'] <= end_date)]
     
     #!-----------------------------------------------------------------------
     #! 所在管理リードタイムのデータ
     #!-----------------------------------------------------------------------
-    #! ★アーカイブ期間の抽出
-    # 保存先のフォルダー
-    folder_path = 'archive_data/leadtime'
-    # ファイル名を指定
-    file_name = "archive_period.json"
-    # ファイルパスを作成
-    file_path = os.path.join(folder_path, file_name)
-    start_date_dif, end_date_dif, flag = get_date_differences(file_path, start_date, end_date)
-    #!-----------------------------------------------------------------------
-    #! 差分期間がある場合だけを読み込むようにする、★dif期間を読み込む
-    if flag == 1:
-        file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
-        Timestamp_df = pd.read_csv(file_path, encoding='shift_jis')
-        # 品番列の空白を削除
-        Timestamp_df['品番'] = Timestamp_df['品番'].str.strip()
-        #Timestamp_df= Timestamp_df.loc[(Timestamp_df['回収日時'] >= start_date_dif) & (Timestamp_df['回収日時'] <= end_date_dif)]
-        # 印刷日時、入庫日時、出庫日時、検収日時をdatetime型に変換
-        Timestamp_df['発注日時'] = pd.to_datetime(Timestamp_df['発注日時'], errors='coerce')
-        Timestamp_df['印刷日時'] = pd.to_datetime(Timestamp_df['印刷日時'], errors='coerce')
-        Timestamp_df['順立装置入庫日時'] = pd.to_datetime(Timestamp_df['順立装置入庫日時'], errors='coerce')
-        Timestamp_df['順立装置出庫日時'] = pd.to_datetime(Timestamp_df['順立装置出庫日時'], errors='coerce')
-        Timestamp_df['検収日時'] = pd.to_datetime(Timestamp_df['検収日時'], errors='coerce')
-        Timestamp_df['更新日時'] = pd.to_datetime(Timestamp_df['更新日時'], errors='coerce')
-        Timestamp_df['回収日時'] = pd.to_datetime(Timestamp_df['回収日時'], errors='coerce')
-        #st.header(len(Timestamp_df))
-        #st.dataframe(Timestamp_df)
-        #! ★ここでエラー出る。短すぎるとダメ？
-        Timestamp_df= Timestamp_df.loc[(Timestamp_df['回収日時'] >= start_date_dif) & (Timestamp_df['回収日時'] <= end_date_dif)]
-        #st.header(len(Timestamp_df))
-        #st.dataframe(Timestamp_df)
-        
-        #! 差分データを新アーカイブデータとして保存
-        # ファイル名を指定
-        file_name = f"{start_date_dif}~{end_date_dif}.csv"
-        # ファイルパスを作成
-        file_path = os.path.join(folder_path, file_name)
-        # 差分データを新アーカイブデータとして保存
-        with open(file_path, mode='w', newline='', encoding='shift_jis',errors='ignore') as f:
-            Timestamp_df.to_csv(f)
-
-    #! フォルダー内のすべてのCSVファイルを読み込む
-    all_dataframes = []
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.csv'):
-            file_path = os.path.join(folder_path, filename)
-            df = pd.read_csv(file_path, encoding='shift_jis')
-            all_dataframes.append(df)
-    # データフレームを統合
-    Timestamp_df = pd.concat(all_dataframes, ignore_index=True)
+    file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+    Timestamp_df = pd.read_csv(file_path, encoding='shift_jis')
+    # 品番列の空白を削除
+    Timestamp_df['品番'] = Timestamp_df['品番'].str.strip()
+    # 印刷日時、入庫日時、出庫日時、検収日時をdatetime型に変換
     Timestamp_df['発注日時'] = pd.to_datetime(Timestamp_df['発注日時'], errors='coerce')
     Timestamp_df['印刷日時'] = pd.to_datetime(Timestamp_df['印刷日時'], errors='coerce')
     Timestamp_df['順立装置入庫日時'] = pd.to_datetime(Timestamp_df['順立装置入庫日時'], errors='coerce')
     Timestamp_df['順立装置出庫日時'] = pd.to_datetime(Timestamp_df['順立装置出庫日時'], errors='coerce')
     Timestamp_df['検収日時'] = pd.to_datetime(Timestamp_df['検収日時'], errors='coerce')
+    # データフレームの列名を表示
+    #columns = df.columns.tolist()
+    #print(columns)
 
     #!-----------------------------------------------------------------------
     #! 自動ラックの在庫推移のデータ
     #!-----------------------------------------------------------------------
-    #! ★アーカイブ期間の抽出
-    # 保存先のフォルダー
-    folder_path = 'archive_data/rack'
-    # ファイル名を指定
-    file_name = "archive_period.json"
-    # ファイルパスを作成
-    file_path = os.path.join(folder_path, file_name)
-    start_date_dif, end_date_dif, flag = get_date_differences(file_path, start_date, end_date)
-    #!-----------------------------------------------------------------------
-    #! 差分期間がある場合だけを読み込むようにする、★dif期間を読み込む
-    if flag == 1:
-        file_path = '中間成果物/在庫推移MBデータ_統合済&特定日時抽出済.csv'
-        zaiko_df = pd.read_csv(file_path, encoding='shift_jis')
-        # 品番列の空白を削除
-        zaiko_df['品番'] = zaiko_df['品番'].str.strip()
-        # '計測日時'をdatatime型に変換
-        zaiko_df['計測日時'] = pd.to_datetime(zaiko_df['計測日時'], errors='coerce')
-        zaiko_df = zaiko_df.rename(columns={'計測日時': '日時'})
-        zaiko_df= zaiko_df.loc[(zaiko_df['日時'] >= start_date_dif) & (zaiko_df['日時'] <= end_date_dif)]
-
-        #! 差分データを新アーカイブデータとして保存
-        # ファイル名を指定
-        file_name = f"{start_date_dif}~{end_date_dif}.csv"
-        # ファイルパスを作成
-        file_path = os.path.join(folder_path, file_name)
-        # 差分データを新アーカイブデータとして保存
-        with open(file_path, mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
-            zaiko_df.to_csv(f)
-
-    #! フォルダー内のすべてのCSVファイルを読み込む
-    all_dataframes = []
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.csv'):
-            file_path = os.path.join(folder_path, filename)
-            df = pd.read_csv(file_path, encoding='shift_jis')
-            all_dataframes.append(df)
-    # データフレームを統合
-    zaiko_df = pd.concat(all_dataframes, ignore_index=True)
-    zaiko_df['日時'] = pd.to_datetime(zaiko_df['日時'], errors='coerce')
+    file_path = '中間成果物/在庫推移MBデータ_統合済&特定日時抽出済.csv'
+    zaiko_df = pd.read_csv(file_path, encoding='shift_jis')
+    # 品番列の空白を削除
+    zaiko_df['品番'] = zaiko_df['品番'].str.strip()
+    # '計測日時'をdatatime型に変換
+    zaiko_df['計測日時'] = pd.to_datetime(zaiko_df['計測日時'], errors='coerce')
+    zaiko_df = zaiko_df.rename(columns={'計測日時': '日時'})
 
     #!------------------------------------------------------------------------
     #! 自動ラックの間口別在庫数や全入庫数のデータ計算
     #!------------------------------------------------------------------------
     AutomatedRack_Details_df = calculate_AutomatedRack_Details(zaiko_df)
-    #AutomatedRack_Details_df= AutomatedRack_Details_df[~((AutomatedRack_Details_df['日時'] >= start_date) & (AutomatedRack_Details_df['日時'] <= end_date))]
 
     #!------------------------------------------------------------------------
     #! 仕入先ダイヤ別の早着や遅れ時間を計算
     #!------------------------------------------------------------------------
-    #arrival_times_df = calculate_supplier_truck_arrival_types()
-    arrival_times_df = calculate_supplier_truck_arrival_types2()#藤井さんに頂いた新しい便ダイヤ
-    #arrival_times_df = arrival_times_df[~((arrival_times_df['日時'] >= start_date) & (arrival_times_df['日時'] <= end_date))]
+    arrival_times_df = calculate_supplier_truck_arrival_types()
     
     #!------------------------------------------------------------------------
     #! 組立実績データの加重平均を計算
     #!------------------------------------------------------------------------
     kumitate_df = calculate_weighted_average_of_kumitate()
-    #kumitate_df = kumitate_df[~((kumitate_df['日時'] >= start_date) & (kumitate_df['日時'] <= end_date))]
-    kumitate_df= kumitate_df.loc[(kumitate_df['日時'] >= start_date) & (kumitate_df['日時'] <= end_date)]
 
     #
     return AutomatedRack_Details_df, arrival_times_df, kumitate_df, teikibin_df, Timestamp_df, zaiko_df
 
+#def process_teikibin(strat_date, end_date):
 
-def get_date_differences(file_path, start_date, end_date):
+#def read_syozailt(strat_date, end_date):
 
-    #! JSONファイルが存在するかチェック。無ければ作る。あれば読み込む
-    # もし無ければ今回の日付をJSONファイルに書き込む
-    if not os.path.exists(file_path):
-        # 変数としてまとめる
-        data = {
-            "start_date": start_date,
-            "end_date": end_date
-        }
-        # JSONファイルを書き込む
-        with open(file_path, 'w') as json_file:
-            json.dump(data, json_file)
-        # JSONファイルを読み込む
-        with open(file_path, 'r') as json_file:
-            loaded_data = json.load(json_file)
-        flag_first = 1 
-    # もしあれば読み込む
-    else:
-        # JSONファイルを読み込む
-        with open(file_path, 'r') as json_file:
-            loaded_data = json.load(json_file)
-        flag_first = 0
-    
-    #! 差分期間の計算
-    #　読み込んだデータを日付を文字列型からdatetimeオブジェクトに変換
-    start_date = datetime.strptime(start_date, '%Y-%m-%d-%H')
-    end_date = datetime.strptime(end_date, '%Y-%m-%d-%H')
-    start_date_archive = datetime.strptime(loaded_data["start_date"], '%Y-%m-%d-%H')
-    end_date_archive = datetime.strptime(loaded_data["end_date"], '%Y-%m-%d-%H')
-    flag = 0
-    # アーカイブ期間と指定期間がまったく同じ場合（初回など）
-    if flag_first == 1: 
-        start_date_all = start_date
-        start_date_dif = start_date
-        end_date_all = end_date
-        end_date_dif = end_date
-        flag = 1
-    elif (start_date == start_date_archive) & (end_date == end_date_archive):
-        start_date_all = start_date
-        start_date_dif = start_date
-        end_date_all = end_date
-        end_date_dif = end_date
-        flag = 0
-        #st.header(start_date_dif)
-        #st.header(end_date_dif)
-    # 指定期間がまったく同じでない場合
-    else:
-        # 存在する期間を計算
-        start_date_all = min(start_date, start_date_archive)
-        end_date_all = max(end_date, end_date_archive)
-        start_date_dif = None
-        end_date_dif = None
-        flag = 0
-        # 存在する期間の修正
-        if end_date < start_date_archive:
-            start_date_dif = start_date
-            end_date_dif = start_date_archive
-            flag = 1
-        elif (start_date < start_date_archive) & (start_date_archive < end_date):
-            start_date_dif = start_date
-            end_date_dif = start_date_archive
-            flag = 1
-        elif (start_date_archive < start_date) & (end_date < end_date_archive):
-            flag = 0
-        elif (start_date < end_date_archive) & (end_date_archive < end_date):
-            start_date_dif = end_date_archive
-            end_date_dif = end_date
-            flag = 1
-        elif end_date_archive < start_date:
-            start_date_dif = end_date_archive
-            end_date_dif = end_date
-            flag = 1
-
-    #! アーカイブ期間の更新
-    # JSONファイルに書き込む
-    data = {
-        "start_date": start_date_all.strftime('%Y-%m-%d-%H'),
-        "end_date": end_date_all.strftime('%Y-%m-%d-%H')
-    }
-    # ファイルパスを作成
-    with open(file_path, 'w') as json_file:
-        json.dump(data, json_file)
-
-    #st.header(flag)
-    #st.header(start_date_dif)
-
-    if flag == 1:
-        # 再度文字列形式に戻す
-        start_date_dif = start_date_dif.strftime('%Y-%m-%d-%H')
-        end_date_dif = end_date_dif.strftime('%Y-%m-%d-%H')
-
-    return start_date_dif, end_date_dif, flag
+#def read_zaiko(strat_date, end_date):
 
 def process_Activedata():
 
@@ -436,66 +261,6 @@ def calculate_supplier_truck_arrival_types():
 
     return arrival_times_df
 
-def calculate_supplier_truck_arrival_types2():
-
-    def calculate_arrival_times(df, time_columns):
-        # タイプが着時刻の行のみを抽出
-        arrival_df = df[df['受入'].isin(['1Y', '1Z'])]
-
-        # 1便以降の日付データを時間だけに変換
-        for col in time_columns:
-            arrival_df[col] = pd.to_datetime(arrival_df[col].astype(str).str.extract(r'(\d{2}:\d{2}:\d{2})')[0], format='%H:%M:%S', errors='coerce').dt.time
-
-        # 早着、定刻、遅着の時間帯を計算
-        arrival_df_with_times = arrival_df.copy()
-        for col in time_columns:
-            arrival_time = pd.to_datetime(arrival_df[col].astype(str), format='%H:%M:%S', errors='coerce')
-            arrival_df_with_times[col + '_早着'] = (arrival_time - pd.Timedelta(hours=2)).dt.time
-            #arrival_df_with_times[col + '_早着_終了'] = arrival_time.dt.time
-            arrival_df_with_times[col + '_定刻'] = arrival_time.dt.time
-            #arrival_df_with_times[col + '_定刻_終了'] = (arrival_time + pd.Timedelta(hours=1)).dt.time
-            arrival_df_with_times[col + '_遅着'] = (arrival_time + pd.Timedelta(hours=2)).dt.time
-            #arrival_df_with_times[col + '_遅着_終了'] = (arrival_time + pd.Timedelta(hours=2)).dt.time
-
-        # 必要な列のみを抽出して返す
-        result_columns = ['仕入先名', '発送場所名', '受入'] + [col for col in arrival_df_with_times.columns if '早着' in col or '定刻' in col or '遅着' in col]
-        return arrival_df_with_times[result_columns]
-
-    # ファイルパス
-    #file_path = '生データ/便ダイヤ/仕入先便ダイヤ.xlsx'#こっちは無理
-    file_path = "生データ/便ダイヤ/仕入先便ダイヤ20240922.xlsx"
-
-    # openpyxlエンジンを使用してExcelファイルを読み込む
-    df = pd.read_excel(file_path, engine='openpyxl', skiprows=4)
-
-    # 5行目を列名として設定し、5行目以降のデータを抽出
-    #df.columns = df.iloc[4]
-    #df = df[5:]
-
-    # 列名をリセット
-    df.columns = df.columns.str.strip()
-    df.reset_index(drop=True, inplace=True)
-
-    # 抽出したい列名を指定
-    columns_to_extract = ['仕入先名', '発送場所名', '受入', '納入先', '1便', '2便', '3便', '4便', '5便', '6便', '7便', '8便', '9便', '10便', '11便', '12便']
-
-    # 指定した列のみを抽出
-    extracted_df = df[columns_to_extract]
-
-    #st.dataframe(extracted_df)
-
-    # 関数を使用して早着、定刻、遅着の時間帯を計算
-    # 4列名以降を計算に使用
-    arrival_times_df = calculate_arrival_times(extracted_df, columns_to_extract[4:])
-
-    # NaNの値を'< NULL >'に置換
-    # 所在管理と結合するため
-    arrival_times_df = arrival_times_df.fillna('< NULL >')
-
-    #st.dataframe(arrival_times_df)
-
-    return arrival_times_df
-
 def calculate_weighted_average_of_kumitate():
 
     def set_A_B_columns(row, df):
@@ -621,88 +386,88 @@ def calculate_weighted_average_of_kumitate():
 
     return kumitate_data
 
-# #途中作成のまま
-# def calculate_teikibin_():
+#途中作成のまま
+def calculate_teikibin_():
 
-#     def add_previous_hours_data(df, X):
-#         """
-#         データフレームに1時間前からX時間前までの「便合計」のデータ列を追加する関数。
+    def add_previous_hours_data(df, X):
+        """
+        データフレームに1時間前からX時間前までの「便合計」のデータ列を追加する関数。
 
-#         Args:
-#         df (DataFrame): 入力データフレーム。
-#         X (int): 追加する時間の範囲（1時間前からX時間前まで）。
+        Args:
+        df (DataFrame): 入力データフレーム。
+        X (int): 追加する時間の範囲（1時間前からX時間前まで）。
 
-#         Returns:
-#         DataFrame: 更新されたデータフレーム。
-#         """
-#         for i in range(1, X + 1):
-#             #df[f'{i}時間前荷役時間'] = df['荷役時間'].shift(i)
-#             df[f'荷役時間(t-{i})'] = df['荷役時間'].shift(i)
-#         return df
+        Returns:
+        DataFrame: 更新されたデータフレーム。
+        """
+        for i in range(1, X + 1):
+            #df[f'{i}時間前荷役時間'] = df['荷役時間'].shift(i)
+            df[f'荷役時間(t-{i})'] = df['荷役時間'].shift(i)
+        return df
 
-#     #ファイル読み込み
-#     file_path_teikibin = '定期便.csv'
-#     teikibin_data = pd.read_csv(file_path_teikibin, encoding='shift_jis')
+    #ファイル読み込み
+    file_path_teikibin = '定期便.csv'
+    teikibin_data = pd.read_csv(file_path_teikibin, encoding='shift_jis')
 
-#     # 日時の列を datetime 型に変換
-#     teikibin_data['JISEKI_DT'] = pd.to_datetime(teikibin_data['JISEKI_DT'])
-#     teikibin_data['JISEKI_DT2'] = pd.to_datetime(teikibin_data['JISEKI_DT2'])
-#     #1時間単位に変換
-#     teikibin_data['定期便到着時刻（1H）'] = pd.to_datetime(teikibin_data['JISEKI_DT']).dt.floor('H')
-#     teikibin_data['定期便出発時刻（1H）'] = pd.to_datetime(teikibin_data['JISEKI_DT2']).dt.floor('H')
-#     # 日時の差を計算
-#     teikibin_data["荷役時間"] = teikibin_data['JISEKI_DT2'] - teikibin_data['JISEKI_DT']
+    # 日時の列を datetime 型に変換
+    teikibin_data['JISEKI_DT'] = pd.to_datetime(teikibin_data['JISEKI_DT'])
+    teikibin_data['JISEKI_DT2'] = pd.to_datetime(teikibin_data['JISEKI_DT2'])
+    #1時間単位に変換
+    teikibin_data['定期便到着時刻（1H）'] = pd.to_datetime(teikibin_data['JISEKI_DT']).dt.floor('H')
+    teikibin_data['定期便出発時刻（1H）'] = pd.to_datetime(teikibin_data['JISEKI_DT2']).dt.floor('H')
+    # 日時の差を計算
+    teikibin_data["荷役時間"] = teikibin_data['JISEKI_DT2'] - teikibin_data['JISEKI_DT']
 
-#     # 各WORK_IDと定期便到着時刻（1H）の組み合わせに対して荷役時間の合計を計算
-#     grouped = teikibin_data.groupby(['WORK_ID', '定期便到着時刻（1H）'])['荷役時間'].sum().reset_index()
+    # 各WORK_IDと定期便到着時刻（1H）の組み合わせに対して荷役時間の合計を計算
+    grouped = teikibin_data.groupby(['WORK_ID', '定期便到着時刻（1H）'])['荷役時間'].sum().reset_index()
 
-#     # 1時間毎のデータフレームに各WORK_IDごとの「定期便到着時刻（1H）」列を追加する
-#     date_range = pd.date_range(start = start_date, end = end_date, freq='H')
+    # 1時間毎のデータフレームに各WORK_IDごとの「定期便到着時刻（1H）」列を追加する
+    date_range = pd.date_range(start = start_date, end = end_date, freq='H')
 
-#     # YYYYMMDDHに全ての時間帯をマッピング
-#     all_hours_df = pd.DataFrame(date_range, columns=['日時']).set_index('日時')
+    # YYYYMMDDHに全ての時間帯をマッピング
+    all_hours_df = pd.DataFrame(date_range, columns=['日時']).set_index('日時')
 
-#     # 結果を保存するための空のDataFrameを準備
-#     result_df = all_hours_df.copy()
+    # 結果を保存するための空のDataFrameを準備
+    result_df = all_hours_df.copy()
 
-#     # 元のデータセットからユニークなWORK_IDを抽出する
-#     unique_work_ids = teikibin_data['WORK_ID'].unique()
+    # 元のデータセットからユニークなWORK_IDを抽出する
+    unique_work_ids = teikibin_data['WORK_ID'].unique()
 
-#     for work_id in unique_work_ids:
-#         # 特定のWORK_IDに対する荷役時間を含む時間帯のデータフレームを抽出
-#         work_times = grouped[grouped['WORK_ID'] == work_id]
-#         work_times = work_times.set_index('定期便到着時刻（1H）')
-#         # 荷役時間を1時間ごとのデータフレームにマージ
-#         result_df[f'荷役時間_便_{work_id}'] = work_times['荷役時間']
+    for work_id in unique_work_ids:
+        # 特定のWORK_IDに対する荷役時間を含む時間帯のデータフレームを抽出
+        work_times = grouped[grouped['WORK_ID'] == work_id]
+        work_times = work_times.set_index('定期便到着時刻（1H）')
+        # 荷役時間を1時間ごとのデータフレームにマージ
+        result_df[f'荷役時間_便_{work_id}'] = work_times['荷役時間']
 
-#     result_df_reset = result_df.reset_index()
+    result_df_reset = result_df.reset_index()
 
-#     # 荷役時間を分単位に変換し、float型で保存するために、Timedeltaを分に変換する処理を行います。
-#     for col in result_df_reset.columns:
-#         if "便" in col:
-#             # Timedeltaを分に変換
-#             result_df_reset[col] = result_df_reset[col].dt.total_seconds() / 60
+    # 荷役時間を分単位に変換し、float型で保存するために、Timedeltaを分に変換する処理を行います。
+    for col in result_df_reset.columns:
+        if "便" in col:
+            # Timedeltaを分に変換
+            result_df_reset[col] = result_df_reset[col].dt.total_seconds() / 60
 
-#     pattern_columns = result_df_reset.filter(regex='荷役時間_便_[0\d\W]+').columns
-#     print(pattern_columns)
+    pattern_columns = result_df_reset.filter(regex='荷役時間_便_[0\d\W]+').columns
+    print(pattern_columns)
 
-#     result_df_reset['荷役時間']=result_df_reset[pattern_columns].sum(axis=1)
-#     result_df_reset.fillna(0, inplace=True)  # 一括でNaNを0に変換
+    result_df_reset['荷役時間']=result_df_reset[pattern_columns].sum(axis=1)
+    result_df_reset.fillna(0, inplace=True)  # 一括でNaNを0に変換
 
-#     # 関数を使用してデータフレームを更新
-#     X = 7  # 1時間前から5時間前までのデータ列を追加
-#     teikibin_df = add_previous_hours_data(result_df_reset, X)
+    # 関数を使用してデータフレームを更新
+    X = 7  # 1時間前から5時間前までのデータ列を追加
+    teikibin_df = add_previous_hours_data(result_df_reset, X)
 
-#     # 統合したデータを新しいCSVファイルに保存
-#     with open(file_path_teikibin2, mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
-#         teikibin_df.to_csv(f)
+    # 統合したデータを新しいCSVファイルに保存
+    with open(file_path_teikibin2, mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
+        teikibin_df.to_csv(f)
 
-#     # 更新されたデータフレームの最初の数行を表示して内容を確認
-#     teikibin_df.head()
+    # 更新されたデータフレームの最初の数行を表示して内容を確認
+    teikibin_df.head()
 
-#     # 結果の一部を表示して確認
-#     # 日付範囲に基づいてデータをフィルタリング
-#     start_date_temp = pd.Timestamp('2023-10-05')
-#     end_date_temp = pd.Timestamp('2023-10-06')
-#     f = teikibin_df[(teikibin_df['日時'] >= start_date_temp) & (teikibin_df['日時'] <= end_date_temp)]
-#     f.head(20)
+    # 結果の一部を表示して確認
+    # 日付範囲に基づいてデータをフィルタリング
+    start_date_temp = pd.Timestamp('2023-10-05')
+    end_date_temp = pd.Timestamp('2023-10-06')
+    f = teikibin_df[(teikibin_df['日時'] >= start_date_temp) & (teikibin_df['日時'] <= end_date_temp)]
+    f.head(20)
