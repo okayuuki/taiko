@@ -277,10 +277,10 @@ def process_Activedata():
         # 日量数列の選択
         daily_columns = df_raw.columns[df_raw.columns.str.contains(r'\d+\(.*\)')].tolist()
         print(daily_columns)
-        df_relevant = df_raw[['品番', '収容数', 'サイクル間隔', 'サイクル回数', 'サイクル情報'] + daily_columns]
+        df_relevant = df_raw[['品番', '収容数','整備室', 'サイクル間隔', 'サイクル回数', 'サイクル情報'] + daily_columns]
 
         # データフレームを縦に展開
-        df_melted = df_relevant.melt(id_vars=['品番', '収容数', 'サイクル間隔', 'サイクル回数', 'サイクル情報'], var_name='日付', value_name='日量数')
+        df_melted = df_relevant.melt(id_vars=['品番', '収容数','整備室', 'サイクル間隔', 'サイクル回数', 'サイクル情報'], var_name='日付', value_name='日量数')
 
         # 日付の列を整数型に変換
         df_melted['日付'] = df_melted['日付'].str.extract(r'(\d+)').astype(int)
@@ -292,6 +292,7 @@ def process_Activedata():
         df_melted['日量数'] = df_melted['日量数'].str.replace(',', '').fillna(0).astype(int)
         df_melted['品番'] = df_melted['品番'].str.replace('="', '').str.replace('"', '').str.replace('=', '').str.replace('-', '')
         df_melted['収容数'] = df_melted['収容数'].str.replace(',', '').fillna(0).astype(int)
+        df_melted['整備室'] = df_melted['整備室'].astype(str).str.replace('="', '').str.replace('"', '').astype(str)
         df_melted['サイクル間隔'] = df_melted['サイクル間隔'].astype(str).str.replace('="', '').str.replace('"', '').astype(int)
         df_melted['サイクル回数'] = df_melted['サイクル回数'].astype(str).str.replace('="', '').str.replace('"', '').astype(int)
         df_melted['サイクル情報'] = df_melted['サイクル情報'].astype(str).str.replace('="', '').str.replace('"', '').astype(float)
@@ -316,6 +317,8 @@ def process_Activedata():
     df_final['設計値MIN'] = np.ceil(0.1*(df_final['週最大日量数（箱数）']*df_final['サイクル間隔']*(1+df_final['サイクル情報'])/df_final['サイクル回数'])).astype(int)
     #! 設計値MAX（小数点以下を切り上げ）
     df_final['設計値MAX'] = df_final['設計値MIN'] + np.ceil(df_final['週最大日量数（箱数）']/df_final['サイクル回数']).astype(int)
+
+    st.dataframe(df_final)
 
     return df_final
     
