@@ -38,17 +38,17 @@ def load_flag_predict(filename='temp/flag_predict.pkl'):
         return step1_flag, step2_flag, step3_flag
         
 #! 中間結果変数を保存する関数
-def save_model_and_data(rf_model, X, data,product, filename='temp/model_and_data.pkl'):
+def save_model_and_data(rf_model, rf_model2, rf_model3, X, data,product, filename='temp/model_and_data.pkl'):
     with open(filename, 'wb') as file:
-        pickle.dump((rf_model, X, data, product), file)
+        pickle.dump((rf_model, rf_model2, rf_model3, X, data, product), file)
         print(f"Model and data saved to {filename}")
         
 #! 中間結果変数を読み込む関数
 def load_model_and_data(filename='temp/model_and_data.pkl'):
     with open(filename, 'rb') as file:
-        rf_model, X, data,product = pickle.load(file)
+        rf_model, rf_model2, rf_model3, X, data,product = pickle.load(file)
         print(f"Model and data loaded from {filename}")
-        return rf_model, X, data,product
+        return rf_model, rf_model2, rf_model3, X, data,product
 
 #! 品番情報を表示する関数
 def display_hinban_info(hinban):
@@ -388,17 +388,20 @@ def analysis_page():
         
         # analysis_v1.pyの中で定義されたshow_analysis関数を呼び出す
         # 学習
-        data, rf_model, X= analysis_v2.show_analysis(product)
+        data, rf_model, rf_model2, rf_model3, X= analysis_v2.show_analysis(product)
+        #data, rf_model2, X= analysis_v2.show_analysis(product, '2024-05-01-00', '2024-08-31-00')
+        #data, rf_model3, X= analysis_v2.show_analysis(product, '2024-05-01-00', '2024-08-31-00')
 
-        # モデルとデータを保存
-        save_model_and_data(rf_model, X, data, product)
+        #! モデルとデータを保存
+        #save_model_and_data(rf_model, X, data, product)
+        save_model_and_data(rf_model, rf_model2, rf_model3, X, data, product, filename='temp/model_and_data.pkl')
         
         #実行フラグを更新する
         step1_flag_analysis = 1
         step3_flag_analysis = 0
         step3_flag_analysis = 0
 
-        # モデルとデータを保存
+        #! フラグを保存
         save_flag_analysis(step1_flag_analysis, step2_flag_analysis, step3_flag_analysis)
         
         display_hinban_info(product)
@@ -414,8 +417,8 @@ def analysis_page():
         elif step1_flag_analysis == 1:
             st.sidebar.success(f"過去に選択された品番: {product}")
             
-            # 保存したモデルとデータを読み込む
-            rf_model, X, data, product = load_model_and_data()
+            #! 保存したモデルとデータを読み込む
+            rf_model, rf_model2, rf_model3, X, data, product = load_model_and_data()
 
             display_hinban_info(product)
         

@@ -261,140 +261,168 @@ def show_analysis(product):
         st.header("✅前処理データの準備が完了しました")
         st.dataframe(lagged_features)
 
-        #! 番号を割り当てる
-        delay_No1 = best_range_order
-        timelag_No1 = timelag
-        data[f'No1_発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）'] = data[f'発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）']
+        temp_data = data
 
-        delay_No2 = end_hours_ago
-        timelag_No2 = timelag
-        data[f'No2_計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）'] = data[f'計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）']
-        
-        delay_No3 = end_hours_ago
-        timelag_No3 = timelag
-        data[f'No3_計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）'] = data[f'計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）']
-        
-        #delay_No4 = best_range_reception
-        #timelag_No4 = timelag
-        #data[f'No4_納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）'] = data[f'納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）']
-        
-        delay_No5 = best_range_reception
-        timelag_No5 = 2
-        data[f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）'] = data[f'仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）']
-        
-        data['No6_定期便出発状況（t-4~t-6）'] = data['定期便出発状況（t-4~t-6）']
-        
-        delay_No7 = end_hours_ago
-        timelag_No7 = timelag
-        data[f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）'] = data[f'間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）']
-        
-        delay_No8 = end_hours_ago
-        timelag_No8 = timelag
-        data[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'] = data[f'部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）']
-        
-        #delay_No9 = end_hours_ago
-        #timelag_No9 = timelag
-        #data[f'No9_定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）'] = data[f'定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）']
+        # モデルを格納するためのリストを作成
+        rf_models = []
 
-        #! 説明変数の設定
-        X = data[[f'No1_発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）',
-                  f'No2_計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）',
-                  f'No3_計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）',
-                  #f'No4_納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）',
-                  f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）',
-                  'No6_定期便出発状況（t-4~t-6）',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
-                  f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）',#f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',
-                  f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'#f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',
-                  #f'No9_定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）']
-                  ]]
+
+        #
+        for i in range(3):
+
+            if i == 0:
+                data = temp_data
+            elif i == 1:
+                one_and_half_months_ago = pd.to_datetime(end_date) - pd.Timedelta(days=45)
+                # 1か月半前のデータを抽出
+                data = temp_data[temp_data['日時'] >= one_and_half_months_ago]
+            elif i == 2:
+                three_and_half_months_ago_manual = pd.to_datetime(end_date) - pd.Timedelta(days=105)
+                # 3か月半前のデータを抽出
+                data = temp_data[temp_data['日時'] >= three_and_half_months_ago_manual]
+
+            #! 番号を割り当てる
+            delay_No1 = best_range_order
+            timelag_No1 = timelag
+            data[f'No1_発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）'] = data[f'発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）']
+
+            delay_No2 = end_hours_ago
+            timelag_No2 = timelag
+            data[f'No2_計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）'] = data[f'計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）']
+            
+            delay_No3 = end_hours_ago
+            timelag_No3 = timelag
+            data[f'No3_計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）'] = data[f'計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）']
+            
+            #delay_No4 = best_range_reception
+            #timelag_No4 = timelag
+            #data[f'No4_納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）'] = data[f'納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）']
+            
+            delay_No5 = best_range_reception
+            timelag_No5 = 2
+            data[f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）'] = data[f'仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）']
+            
+            data['No6_定期便出発状況（t-4~t-6）'] = data['定期便出発状況（t-4~t-6）']
+            
+            delay_No7 = end_hours_ago
+            timelag_No7 = timelag
+            data[f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）'] = data[f'間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）']
+            
+            delay_No8 = end_hours_ago
+            timelag_No8 = timelag
+            data[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'] = data[f'部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）']
+            
+            #delay_No9 = end_hours_ago
+            #timelag_No9 = timelag
+            #data[f'No9_定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）'] = data[f'定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）']
+
+            #! 説明変数の設定
+            X = data[[f'No1_発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）',
+                    f'No2_計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）',
+                    f'No3_計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）',
+                    #f'No4_納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）',
+                    f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）',
+                    'No6_定期便出発状況（t-4~t-6）',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
+                    f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）',#f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',
+                    f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'#f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',
+                    #f'No9_定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）']
+                    ]]
+            
+            #確認：実行結果
+            st.header("✅解析データ（目的変数と要因変数）の準備が完了しました")
+            st.dataframe(X.head(300))
+
+            #! 目的変数の定義
+            y = data[f'在庫増減数（t-0~t-{timelag}）']
+            #y = data[f'在庫増減数(t)']
+
+            # DataFrame に変換（列名を指定する）
+            #y = pd.DataFrame(y, columns=[f'在庫増減数（t-0~t-{best_range_order}）'])
+
+            # StandardScalerを使用して標準化
+            #scaler = StandardScaler()
+            #y_scaled = pd.DataFrame(scaler.fit_transform(y), columns=y.columns)
+
+            #st.dataframe(X)
+
+            #! データを学習データとテストデータに分割
+            #todo 学習データの割合
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.05, random_state=42)
+
+            #! Lasso回帰モデルの作成
+            ridge = Ridge(alpha=0.1)
+            # モデルの訓練
+            ridge.fit(X_train, y_train)
+            # 予測
+            y_pred_train = ridge.predict(X_train)
+            y_pred_test = ridge.predict(X_test)
+            # 評価
+            mse_train = mean_squared_error(y_train, y_pred_train)
+            mse_test = mean_squared_error(y_test, y_pred_test)
+            max_error_train = max_error(y_train, y_pred_train)
+            max_error_test = max_error(y_test, y_pred_test)
+            # マイナス方向の最大誤差を計算
+            min_error_train = np.min(y_train - y_pred_train)
+            min_error_test = np.min(y_test - y_pred_test)
+
+            #print(f'Ridge回帰 - 訓練データのMSE: {mse_train}')
+            #print(f'Ridge回帰 - テストデータのMSE: {mse_test}')
+            #print(f'Ridge回帰 - 訓練データの最大誤差: {max_error_train}')
+            #print(f'Ridge回帰 - テストデータの最大誤差: {max_error_test}')
+            #print(f'Ridge回帰 - 訓練データのマイナス方向の最大誤差: {min_error_train}')
+            #print(f'Ridge回帰 - テストデータのマイナス方向の最大誤差: {min_error_test}')
+            # 平均誤差を計算
+            mae = mean_absolute_error(y_test, y_pred_test)
+            #print(f'Ridge回帰 - テストデータの平均誤差: {mae}')
+
+            #! ランダムフォレストモデルの訓練
+            if i == 2:
+                rf_model = RandomForestRegressor(n_estimators=10, max_depth=30, random_state=42)
+                rf_model.fit(X_train, y_train)
+            elif i == 1:
+                rf_model2 = RandomForestRegressor(n_estimators=10, max_depth=30, random_state=42)
+                rf_model2.fit(X_train, y_train)
+            elif i == 0:
+                rf_model3 = RandomForestRegressor(n_estimators=10, max_depth=30, random_state=42)
+                rf_model3.fit(X_train, y_train)
+
+            # テストデータで予測し、MSEを計算
+            #y_pred = rf_model.predict(X_test)
+            #mse = mean_squared_error(y_test, y_pred)
+            #print(f'ランダムフォレスト - テストデータのMSE: {mse}')
+            # 最大誤差を計算
+            #max_err = max_error(y_test, y_pred)
+            #print(f'ランダムフォレスト - テストデータの最大誤差: {max_err}')
+            # マイナス方向の最大誤差を計算
+            #min_err = np.min(y_test - y_pred)
+            #print(f'ランダムフォレスト - テストデータのマイナス方向の最大誤差: {min_err}')
+            # 平均誤差を計算
+            #mae2 = mean_absolute_error(y_test, y_pred)
+            #st.header(mae2)
+            #print(f'ランダムフォレスト - テストデータの平均誤差: {mae2}')
+            #--------------------------------------------------------------------------------------------------------
+            
+            unique_hinban_list = lagged_features['仕入先名'].unique()
+            supply = str(unique_hinban_list[0])
+            zaikozaiko = lagged_features['在庫数（箱）'].mean()
+            
+            #appendメソッドはpandasの最新バージョンでは廃止
+            # 結果をデータフレームに追加
+            #results_df = results_df.append({'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test,
+                                            #'ランダムフォレストの平均誤差': mae2, 'ランダムフォレストのマイナス方向の最大誤差': min_err, 'ランダムフォレストのプラス方向の最大誤差': max_err}, ignore_index=True)
+
+            #! 実行結果収集
+            new_row = pd.DataFrame([{'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test}])
+            results_df = pd.concat([results_df, new_row], ignore_index=True)
+
+            #! 終了通知
+            print("終了")
+            
+            #! CSVファイルに保存
+            with open("temp/一時保存データ.csv", mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
+                data.to_csv(f)
         
-        #確認：実行結果
-        st.header("✅解析データ（目的変数と要因変数）の準備が完了しました")
-        st.dataframe(X.head(300))
-
-        #! 目的変数の定義
-        y = data[f'在庫増減数（t-0~t-{timelag}）']
-        #y = data[f'在庫増減数(t)']
-
-        # DataFrame に変換（列名を指定する）
-        #y = pd.DataFrame(y, columns=[f'在庫増減数（t-0~t-{best_range_order}）'])
-
-        # StandardScalerを使用して標準化
-        #scaler = StandardScaler()
-        #y_scaled = pd.DataFrame(scaler.fit_transform(y), columns=y.columns)
-
-        #st.dataframe(X)
-
-        #! データを学習データとテストデータに分割
-        #todo 学習データの割合
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.05, random_state=42)
-
-        #! Lasso回帰モデルの作成
-        ridge = Ridge(alpha=0.1)
-        # モデルの訓練
-        ridge.fit(X_train, y_train)
-        # 予測
-        y_pred_train = ridge.predict(X_train)
-        y_pred_test = ridge.predict(X_test)
-        # 評価
-        mse_train = mean_squared_error(y_train, y_pred_train)
-        mse_test = mean_squared_error(y_test, y_pred_test)
-        max_error_train = max_error(y_train, y_pred_train)
-        max_error_test = max_error(y_test, y_pred_test)
-        # マイナス方向の最大誤差を計算
-        min_error_train = np.min(y_train - y_pred_train)
-        min_error_test = np.min(y_test - y_pred_test)
-
-        #print(f'Ridge回帰 - 訓練データのMSE: {mse_train}')
-        #print(f'Ridge回帰 - テストデータのMSE: {mse_test}')
-        #print(f'Ridge回帰 - 訓練データの最大誤差: {max_error_train}')
-        #print(f'Ridge回帰 - テストデータの最大誤差: {max_error_test}')
-        #print(f'Ridge回帰 - 訓練データのマイナス方向の最大誤差: {min_error_train}')
-        #print(f'Ridge回帰 - テストデータのマイナス方向の最大誤差: {min_error_test}')
-        # 平均誤差を計算
-        mae = mean_absolute_error(y_test, y_pred_test)
-        #print(f'Ridge回帰 - テストデータの平均誤差: {mae}')
-
-        #! ランダムフォレストモデルの訓練
-        rf_model = RandomForestRegressor(n_estimators=10, max_depth=30, random_state=42)
-        rf_model.fit(X_train, y_train)
-        # テストデータで予測し、MSEを計算
-        y_pred = rf_model.predict(X_test)
-        mse = mean_squared_error(y_test, y_pred)
-        print(f'ランダムフォレスト - テストデータのMSE: {mse}')
-        # 最大誤差を計算
-        max_err = max_error(y_test, y_pred)
-        print(f'ランダムフォレスト - テストデータの最大誤差: {max_err}')
-        # マイナス方向の最大誤差を計算
-        min_err = np.min(y_test - y_pred)
-        print(f'ランダムフォレスト - テストデータのマイナス方向の最大誤差: {min_err}')
-        # 平均誤差を計算
-        mae2 = mean_absolute_error(y_test, y_pred)
-        #st.header(mae2)
-        print(f'ランダムフォレスト - テストデータの平均誤差: {mae2}')
-        #--------------------------------------------------------------------------------------------------------
-        
-        unique_hinban_list = lagged_features['仕入先名'].unique()
-        supply = str(unique_hinban_list[0])
-        zaikozaiko = lagged_features['在庫数（箱）'].mean()
-        
-        #appendメソッドはpandasの最新バージョンでは廃止
-        # 結果をデータフレームに追加
-        #results_df = results_df.append({'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test,
-                                        #'ランダムフォレストの平均誤差': mae2, 'ランダムフォレストのマイナス方向の最大誤差': min_err, 'ランダムフォレストのプラス方向の最大誤差': max_err}, ignore_index=True)
-
-        #! 実行結果収集
-        new_row = pd.DataFrame([{'品番': part_number,'仕入先名':supply,'平均在庫':zaikozaiko,'Ridge回帰の平均誤差': mae, 'Ridge回帰のマイナス方向の最大誤差': min_error_test, 'Ridge回帰のプラス方向の最大誤差': max_error_test}])
-        results_df = pd.concat([results_df, new_row], ignore_index=True)
-
-        #! 終了通知
-        print("終了")
-        
-        #! CSVファイルに保存
-        with open("temp/一時保存データ.csv", mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
-            data.to_csv(f)
-        
-        return data, rf_model, X
+        return data, rf_model, rf_model2, rf_model3, X
 
         ###全部終わった後に非稼動日時間のデータ追加。上まで遅れ計算で土日などを除外しているので。
         ## 補完する時間範囲を決定
@@ -417,7 +445,7 @@ def step2(data, rf_model, X, start_index, end_index, step3_flag, highlight_time=
 
     #Todo 品番名を取り出すために実行、きれいじゃないから要修正
     with open('temp/model_and_data.pkl', 'rb') as file:
-        rf_model, X, data, product = pickle.load(file)
+        rf_model, rf_model2, rf_model3, X, data, product = pickle.load(file)
 
     #! Activeデータをダウンロード
     Activedata = process_Activedata()
@@ -448,9 +476,24 @@ def step2(data, rf_model, X, start_index, end_index, step3_flag, highlight_time=
     #st.dataframe(data.head(300))
 
     # SHAP計算
+    #before
     #explainer = shap.TreeExplainer(rf_model, feature_dependence='tree_path_dependent', model_output='margin')
+
+    #after
     explainer = shap.TreeExplainer(rf_model, model_output='raw')
     shap_values = explainer.shap_values(X)
+
+    explainer = shap.TreeExplainer(rf_model2, model_output='raw')
+    shap_values2 = explainer.shap_values(X)
+
+    explainer = shap.TreeExplainer(rf_model3, model_output='raw')
+    shap_values3 = explainer.shap_values(X)
+
+    #アンサンブル試験
+    shap_values = shap_values# + shap_values2 + shap_values3
+    #shap_values = shap_values
+    #shap_values = shap_values2
+    #shap_values = shap_values3
 
     first_datetime_df = data['日時'].iloc[0]
     print(f"dataの日時列の最初の値: {first_datetime_df}")
@@ -647,7 +690,7 @@ def step3(bar_df, df2, selected_datetime, line_df):
     #! Activeデータの準備
     #Todo 品番名を取り出すために実行、きれいじゃないから要修正
     with open('temp/model_and_data.pkl', 'rb') as file:
-        rf_model, X, data, product = pickle.load(file)
+        rf_model,rf_model2,rf_model3, X, data, product = pickle.load(file)
     #　Activeデータをダウンロード
     Activedata = process_Activedata()
     #　品番、整備室情報読み込み

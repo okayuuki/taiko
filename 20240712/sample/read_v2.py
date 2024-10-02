@@ -321,7 +321,7 @@ def process_teikibin(start_date, end_date):#ろじれこデータ取得
         filtered_df.loc[:, 'JISEKI_DT2'] = pd.to_datetime(filtered_df['JISEKI_DT2'], format='%Y-%m-%d %H:%M:%S.%f')
 
         # 統合したデータを新しいCSVファイルに保存
-        with open("定期便.csv", mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
+        with open("生データ/ろじれこ/定期便.csv", mode='w',newline='', encoding='shift_jis',errors='ignore') as f:
             filtered_df.to_csv(f)
             
         filtered_df.head(10)
@@ -350,7 +350,7 @@ def process_teikibin(start_date, end_date):#ろじれこデータ取得
     evaluate()
 
     #! ファイル読み込み
-    file_path_teikibin = 'ろじれこ/定期便.csv'
+    file_path_teikibin = '生データ/ろじれこ/定期便.csv.csv'
     teikibin_data = pd.read_csv(file_path_teikibin, encoding='shift_jis')
 
     #! 日時の列を datetime 型に変換
