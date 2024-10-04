@@ -6,54 +6,61 @@ import pandas as pd
 from datetime import datetime, time as dt_time
 from datetime import datetime, timedelta
 import pickle
+import matplotlib.pyplot as plt
+import plotly.express as px
 import fitz  # PyMuPDF
 #! 自作ライブラリのimport
+#データ読み取り用
+from read_v2 import read_data, process_Activedata
 import analysis_v2 # analysis_v2.pyが同じディレクトリにある前提
 import forecast_v2
 
 #! 要因分析用の各ステップの実行フラグを保存する関数
-def save_flag_analysis(step1_flag, step2_flag, step3_flag, filename='flag_analysis.pkl'):
+def save_flag_analysis(step1_flag, step2_flag, step3_flag, filename='temp/flag_analysis.pkl'):
     with open(filename, 'wb') as file:
         pickle.dump((step1_flag, step2_flag, step3_flag), file)
         
 #! 要因分析用の各ステップの実行フラグを読み込む関数
-def load_flag_analysis(filename='flag_analysis.pkl'):
+def load_flag_analysis(filename='temp/flag_analysis.pkl'):
     with open(filename, 'rb') as file:
         step1_flag, step2_flag, step3_flag = pickle.load(file)
         print(f"Model and data loaded from {filename}")
         return step1_flag, step2_flag, step3_flag
     
 #! 予測用の各ステップの実行フラグを保存する関数
-def save_flag_predict(step1_flag, step2_flag, step3_flag, filename='flag_predict.pkl'):
+def save_flag_predict(step1_flag, step2_flag, step3_flag, filename='temp/flag_predict.pkl'):
     with open(filename, 'wb') as file:
         pickle.dump((step1_flag, step2_flag, step3_flag), file)
         
 #! 予測用の各ステップの実行フラグを読み込む関数
-def load_flag_predict(filename='flag_predict.pkl'):
+def load_flag_predict(filename='temp/flag_predict.pkl'):
     with open(filename, 'rb') as file:
         step1_flag, step2_flag, step3_flag = pickle.load(file)
         print(f"Model and data loaded from {filename}")
         return step1_flag, step2_flag, step3_flag
         
 #! 中間結果変数を保存する関数
-def save_model_and_data(rf_model, X, data,product, filename='model_and_data.pkl'):
+def save_model_and_data(rf_model, rf_model2, rf_model3, X, data,product, filename='temp/model_and_data.pkl'):
     with open(filename, 'wb') as file:
-        pickle.dump((rf_model, X, data, product), file)
+        pickle.dump((rf_model, rf_model2, rf_model3, X, data, product), file)
         print(f"Model and data saved to {filename}")
         
 #! 中間結果変数を読み込む関数
-def load_model_and_data(filename='model_and_data.pkl'):
+def load_model_and_data(filename='temp/model_and_data.pkl'):
     with open(filename, 'rb') as file:
-        rf_model, X, data,product = pickle.load(file)
+        rf_model, rf_model2, rf_model3, X, data,product = pickle.load(file)
         print(f"Model and data loaded from {filename}")
-        return rf_model, X, data,product
+        return rf_model, rf_model2, rf_model3, X, data,product
 
 #! 品番情報を表示する関数
 def display_hinban_info(hinban):
 
-    file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
-    df = pd.read_csv(file_path, encoding='shift_jis')
+    #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+    #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'#こっちは文字化けでエラーになる
+    #df = pd.read_csv(file_path, encoding='shift_jis')
+    df = process_Activedata()
     df['品番'] = df['品番'].str.strip()
+    hinban = hinban.split('_')[0]#整備室情報削除
     filtered_df = df[df['品番'] == hinban]# 品番を抽出
     filtered_df = pd.DataFrame(filtered_df)
     filtered_df = filtered_df.reset_index(drop=True)
@@ -64,14 +71,18 @@ def display_hinban_info(hinban):
     
     value1 = str(product['品番'])
     value2 = str(product['品名'])
-    value3 = str(product['仕入先名'])
+    value3 = str(product['仕入先名/工場名'])
     value4 = str(product['収容数'])
-    # 3つの列を作成
-    col1, col2, col3, col4 = st.columns(4)
+    value5 = str(product['整備室'])
+    
+    # 5つの列で表示
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric(label="品番", value=value1)
     col2.metric(label="品名", value=value2)
     col3.metric(label="仕入先名", value=value3)
     col4.metric(label="収容数", value=value4)
+    col5.metric(label="整備室", value=value5)
+    
     #差分表示一例
     #col3.metric(label="仕入先名", value="15 mph", delta="1 mph")
 
@@ -136,8 +147,9 @@ def forecast_page():
         #---<ToDo>---
         #変更必要
         #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'#こっちは文字化けでエラーになる
-        file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
-        df = pd.read_csv(file_path, encoding='shift_jis')
+        #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+        #df = pd.read_csv(file_path, encoding='shift_jis')
+        df = process_Activedata()
 
         # 品番リスト
         df['品番'] = df['品番'].str.strip()
@@ -304,7 +316,6 @@ def forecast_page():
             st.sidebar.warning("在庫数を入力してください")
 
 #-----------------------------------------------------------------------------------------------------------------------------------
-
 #! 要因分析ページ            
 def analysis_page():
 
@@ -336,6 +347,7 @@ def analysis_page():
 
     st.sidebar.write("## 🔥各ステップを順番に実行してください🔥")
 
+    #! ステップ１
     st.sidebar.title("ステップ１：品番選択")
 
     # フォーム作成
@@ -344,17 +356,30 @@ def analysis_page():
         #---<ToDo>---
         #変更必要
         #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'#こっちは文字化けでエラーになる
-        file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
-        df = pd.read_csv(file_path, encoding='shift_jis')
+        #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+        #df = pd.read_csv(file_path, encoding='shift_jis')
+        df = process_Activedata()
 
-        # 品番リスト
+        #! ユニークな品番リストを作成
         df['品番'] = df['品番'].str.strip()
         unique_hinban_list = df['品番'].unique()
 
-        # サイドバーに品番選択ボックスを作成
-        product = st.selectbox("品番を選択してください", unique_hinban_list)
+        # '品番' ごとに '整備室' のユニークな値を集める
+        hinban_seibishitsu_df = df.groupby('品番')['整備室'].unique().reset_index()
+
+        # '整備室' のユニークな値を行ごとに展開
+        hinban_seibishitsu_df = hinban_seibishitsu_df.explode('整備室')
+
+        #!　ユニークな '品番_整備室' 列を作成
+        hinban_seibishitsu_df['品番_整備室'] = hinban_seibishitsu_df.apply(lambda row: f"{row['品番']}_{row['整備室']}", axis=1)
+
+        #実行結果確認
+        #st.dataframe(hinban_seibishitsu_df)
+
+        #! サイドバーに品番選択ボックスを作成
+        product = st.selectbox("品番を選択してください", hinban_seibishitsu_df['品番_整備室'])
         
-        # 「適用」ボタンをフォーム内に追加
+        # 「登録する」ボタンをフォーム内に追加
         submit_button_step1 = st.form_submit_button(label='登録する')
 
     # 適用ボタンが押されたときの処理
@@ -364,17 +389,20 @@ def analysis_page():
         
         # analysis_v1.pyの中で定義されたshow_analysis関数を呼び出す
         # 学習
-        data, rf_model, X= analysis_v2.show_analysis(product)
+        data, rf_model, rf_model2, rf_model3, X= analysis_v2.show_analysis(product)
+        #data, rf_model2, X= analysis_v2.show_analysis(product, '2024-05-01-00', '2024-08-31-00')
+        #data, rf_model3, X= analysis_v2.show_analysis(product, '2024-05-01-00', '2024-08-31-00')
 
-        # モデルとデータを保存
-        save_model_and_data(rf_model, X, data, product)
+        #! モデルとデータを保存
+        #save_model_and_data(rf_model, X, data, product)
+        save_model_and_data(rf_model, rf_model2, rf_model3, X, data, product, filename='temp/model_and_data.pkl')
         
         #実行フラグを更新する
         step1_flag_analysis = 1
         step3_flag_analysis = 0
         step3_flag_analysis = 0
 
-        # モデルとデータを保存
+        #! フラグを保存
         save_flag_analysis(step1_flag_analysis, step2_flag_analysis, step3_flag_analysis)
         
         display_hinban_info(product)
@@ -384,25 +412,25 @@ def analysis_page():
         
         # まだ一度もSTEP1が実行されていない時
         if step1_flag_analysis == 0:
-            st.sidebar.warning("品番を選択してください")
+            st.sidebar.warning("品番を選択し、「登録する」ボタンをてください")
 
         #1度はボタン押されている
         elif step1_flag_analysis == 1:
             st.sidebar.success(f"過去に選択された品番: {product}")
             
-            # 保存したモデルとデータを読み込む
-            rf_model, X, data, product = load_model_and_data()
+            #! 保存したモデルとデータを読み込む
+            rf_model, rf_model2, rf_model3, X, data, product = load_model_and_data()
 
             display_hinban_info(product)
         
     #--------------------------------------------------------------------------------
         
-    # タイトル
+    #! ステップ２
     st.sidebar.title("ステップ２：在庫確認")
     
     # ---<ToDo>---
     # データの最小日時と最大日時を取得
-    data = pd.read_csv("一時保存データ.csv",encoding='shift_jis')
+    data = pd.read_csv("temp/一時保存データ.csv",encoding='shift_jis')
     data['日時'] = pd.to_datetime(data['日時'], errors='coerce')
     min_datetime = data['日時'].min()
     max_datetime = data['日時'].max()
@@ -488,6 +516,13 @@ def analysis_page():
         else:
             st.sidebar.success(f"開始日時: {start_datetime}")
             st.sidebar.success(f"終了日時: {end_datetime}")
+            
+            #st.sidebar.info(step1_flag_analysis)
+            #st.sidebar.info(step2_flag_analysis)
+            #st.sidebar.info(step3_flag_analysis)
+
+            step3_flag_analysis = 0
+
             #st.sidebar.success(f"開始日時: {start_datetime}, インデックス: {start_index}")
             #st.sidebar.success(f"終了日時: {end_datetime}, インデックス: {end_index}")
             bar_df, df2, line_df = analysis_v2.step2(data, rf_model, X, start_index, end_index, step3_flag_analysis)
@@ -501,7 +536,7 @@ def analysis_page():
     else:
 
         if step3_flag_analysis == 0:
-            st.sidebar.warning("開始日、終了日、開始時間、終了時間を選択し、実行ボタンを押してください。")
+            st.sidebar.warning("開始日、終了日を選択し、「登録する」ボタンを押してください。")
             min_datetime = min_datetime.to_pydatetime()
             max_datetime = max_datetime.to_pydatetime()
             
@@ -510,7 +545,7 @@ def analysis_page():
             st.sidebar.success(f"終了日時: {end_datetime}")
             min_datetime = start_datetime
             max_datetime = end_datetime
-            step3_flag_analysis = 1
+            step2_flag_analysis = 1
 
             # モデルとデータを保存
             save_flag_analysis(step1_flag_analysis, step2_flag_analysis, step3_flag_analysis)
@@ -518,7 +553,7 @@ def analysis_page():
         
     #--------------------------------------------------------------------------------
     
-    # サイドバーに日時選択スライダーを表示
+    #! ステップ３
     st.sidebar.title("ステップ３：要因分析")
     
     # スライドバーで表示するよう
@@ -549,21 +584,22 @@ def analysis_page():
 
         
     if submit_button_step3:
+
         step3_flag_analysis = 1
 
         bar_df, df2, line_df = analysis_v2.step2(data, rf_model, X, start_index, end_index, step3_flag_analysis, selected_datetime)
-        zaikosu = line_df.loc[line_df['日時'] == selected_datetime, '在庫数（箱）'].values[0]
+        #zaikosu = line_df.loc[line_df['日時'] == selected_datetime, '在庫数（箱）'].values[0]
         analysis_v2.step3(bar_df, df2, selected_datetime, line_df)
 
         st.sidebar.success(f"選択された日時: {selected_datetime}")#、在庫数（箱）：{int(zaikosu)}")
 
-        step3_flag_analysis = 0
+        step2_flag_analysis = 0
         
         # モデルとデータを保存
         save_flag_analysis(step1_flag_analysis, step3_flag_analysis, step3_flag_analysis)
     
-    elif step2_flag_analysis == 0:
-        st.sidebar.warning("日時を選択してください")
+    elif (step2_flag_analysis == 0) or (step3_flag_analysis == 0) or (step2_flag_analysis == 1):
+        st.sidebar.warning("要因分析の結果を表示する日時を選択し、「登録する」ボタンを押してください")
 
 #-----------------------------------------------------------------------------------------------------------------------------------
 
@@ -572,7 +608,8 @@ def main():
     
     #スライドバーの設定
     st.sidebar.title("メインメニュー")
-    page = st.sidebar.radio("ページ選択", ["🏠 ホーム", "⏳ 予測", "📊 分析","📖 マニュアル"])
+    page = st.sidebar.radio("ページ選択", ["🏠 ホーム", "🔍 可視化", "📊 分析","⏳ 予測（準備中）","📖 マニュアル"])
+    #page = st.sidebar.radio("ページ選択", ["🏠 ホーム",  "📊 分析","⏳ 予測（準備中）","📖 マニュアル"])
     
     # 折り返し線を追加
     st.sidebar.markdown("---")
@@ -603,8 +640,8 @@ def main():
         
         #!　更新履歴用の日付とメッセージのデータを作成
         data = {
-            "日付": ["2024年10月1日", "", ""],
-            "メッセージ　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　": ["トライ用アプリをリリースしました", "", ""]
+            "日付": ["2024年9月30日（月）", ""],
+            "メッセージ　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　": ["トライ用アプリを公開しました", ""]
         }
 
         #! pandasデータフレームを作成
@@ -612,9 +649,9 @@ def main():
 
         st.write("\n\n")
         st.subheader("**🚩 ナビゲーション**")
-        st.info("**👈 左側のサイドバーで各種機能をご使用できます。詳細は📖 マニュアルをご参照ください。**")
+        st.info("**👈 左側のサイドバーで各種機能を使用できます。詳細は📖 マニュアルをご参照ください。**")
         st.write("・🏠 ホーム：アプリについての情報を確認できます。")
-        st.write("・⏳ 予測：在庫リミット計算を行うことができます。")
+        st.write("・⏳ 予測（準備中）：在庫リミット計算を行うことができます。")
         st.write("・📊 分析：在庫変動の要因分析を行うことができます。")
         st.write("・📖 マニュアル：本アプリの使用方法を確認できます。")
 
@@ -623,13 +660,253 @@ def main():
         st.subheader("**🆕 更新履歴**")
         st.dataframe(df)
     
-    elif page == "⏳ 予測":
+    elif page == "⏳ 予測（準備中）":
         forecast_page()
 
     elif page == "📊 分析":
         analysis_page()
+
+    elif page == "🔍 可視化":
         
+        #import pandas as pd
+        #import matplotlib.pyplot as plt
+        #import streamlit as st
+
+        #! 関数を呼び出してCSSを適用
+        apply_custom_css()
+
+        # データを読み込む（Shift_JISエンコード）
+        file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+        df = pd.read_csv(file_path, encoding='shift_jis')
+
+        # タイムスタンプ関連の列を抽出
+        df_filtered = df[['品番', '納入日', '発注〜印刷LT', '発注〜検収LT', '発注〜順立装置入庫LT', '発注〜順立装置出庫LT', '発注〜回収LT', 
+                        '発注日時', '印刷日時', '検収日時', '順立装置入庫日時', '順立装置出庫日時', '回収日時']]
+
+        # 時刻を datetime 型に変換
+        df_filtered['発注日時'] = pd.to_datetime(df_filtered['発注日時'], errors='coerce')
+        df_filtered['印刷日時'] = pd.to_datetime(df_filtered['印刷日時'], errors='coerce')
+        df_filtered['検収日時'] = pd.to_datetime(df_filtered['検収日時'], errors='coerce')
+        df_filtered['順立装置入庫日時'] = pd.to_datetime(df_filtered['順立装置入庫日時'], errors='coerce')
+        df_filtered['順立装置出庫日時'] = pd.to_datetime(df_filtered['順立装置出庫日時'], errors='coerce')
+        df_filtered['回収日時'] = pd.to_datetime(df_filtered['回収日時'], errors='coerce')
+
+        # 指定時刻が範囲内にあるかんばん数を計算する関数
+        def count_kanban_between(df, start_col, end_col, target_time):
+            return df[(df[start_col] <= target_time) & (df[end_col] >= target_time)].shape[0]
+
+        # Streamlit アプリケーション
+        st.title('かんばん数の可視化')
+
+        # 品番の選択肢をユーザーに提示（ユニークな品番をリスト化）
+        品番選択肢 = df_filtered['品番'].unique()
+        選択された品番 = st.selectbox('品番を選択してください', 品番選択肢)
+
+        # データを選択された品番にフィルタリング
+        df_filtered = df_filtered[df_filtered['品番'] == 選択された品番]
+
+        # 指定時刻をユーザーが選択できるようにする（1時間ごとのデータを確認する）
+        指定日 = st.date_input('日付を選択してください', pd.to_datetime('2023-10-31'))
+        指定時刻 = st.time_input('時間を選択してください', pd.to_datetime('11:00').time())
+
+        # 指定された日付と時間を組み合わせて、datetime型の指定時刻を作成
+        指定日時 = pd.to_datetime(f'{指定日} {指定時刻}')
+
+        # 指定した時刻におけるかんばん数を各関所ごとに計算
+        発注_印刷_かんばん数 = count_kanban_between(df_filtered, '発注日時', '印刷日時', 指定日時)
+        印刷_検収_かんばん数 = count_kanban_between(df_filtered, '印刷日時', '検収日時', 指定日時)
+        検収_入庫_かんばん数 = count_kanban_between(df_filtered, '検収日時', '順立装置入庫日時', 指定日時)
+        入庫_出庫_かんばん数 = count_kanban_between(df_filtered, '順立装置入庫日時', '順立装置出庫日時', 指定日時)
+        出庫_回収_かんばん数 = count_kanban_between(df_filtered, '順立装置出庫日時', '回収日時', 指定日時)
+
+        # 関所ごとのかんばん数をリストに格納
+        kanban_counts = [発注_印刷_かんばん数, 印刷_検収_かんばん数, 検収_入庫_かんばん数, 入庫_出庫_かんばん数, 出庫_回収_かんばん数]
+        labels = ['発注ー印刷', '印刷ー検収', '検収ー入庫', '入庫ー出庫', '出庫ー回収']
+
+        # 棒グラフをプロット
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.bar(labels, kanban_counts, color='skyblue')
+        ax.set_title(f'{選択された品番} のかんばん数 ({指定時刻} 時点)')
+        ax.set_ylabel('かんばん数')
+        ax.set_xlabel('関所')
+        ax.set_xticks(range(len(labels)), labels, rotation=45)
+        plt.tight_layout()
+
+        # グラフをStreamlitで表示
+        st.pyplot(fig)
+
+        # テーブル形式で結果を表示
+        st.write(f"指定日時: {指定日時}")
+        st.write(pd.DataFrame({'関所': labels, 'かんばん数': kanban_counts}))
+
+        # 指定時刻が範囲内にあるかんばん数を計算する関数
+        def count_kanban_between(df, start_col, end_col, target_time):
+            return df[(df[start_col] <= target_time) & (df[end_col] >= target_time)].shape[0]
+
+        # Streamlit アプリケーション
+        st.title('かんばん数の可視化（アニメーション）')
+
+        # 品番の選択肢をユーザーに提示（ユニークな品番をリスト化）
+        品番選択肢 = df_filtered['品番'].unique()
+        選択された品番 = st.selectbox('品番を選択してください', 品番選択肢)
+
+        # データを選択された品番にフィルタリング
+        df_filtered = df_filtered[df_filtered['品番'] == 選択された品番]
+
+        # 開始日と時間を選択できるようにする
+        開始日 = st.date_input('開始日を選択してください', pd.to_datetime('2023-10-31'), key="start_date_input")
+        開始時間 = st.time_input('開始時間を選択してください', pd.to_datetime('11:00').time(), key="start_time_input")
+
+        # 終了日と時間を選択できるようにする
+        終了日 = st.date_input('終了日を選択してください', pd.to_datetime('2023-10-31'), key="end_date_input")
+        終了時間 = st.time_input('終了時間を選択してください', pd.to_datetime('14:00').time(), key="end_time_input")
+
+        # 開始日時と終了日時を作成
+        開始日時 = pd.to_datetime(f'{開始日} {開始時間}')
+        終了日時 = pd.to_datetime(f'{終了日} {終了時間}')
+
+        # 1時間ごとに時間範囲を作成
+        時間範囲 = pd.date_range(start=開始日時, end=終了日時, freq='H')
+
+        # 各時間でのかんばん数を集計
+        kanban_counts_per_hour = []
+
+        for target_time in 時間範囲:
+            発注_印刷_かんばん数 = count_kanban_between(df_filtered, '発注日時', '印刷日時', target_time)
+            印刷_検収_かんばん数 = count_kanban_between(df_filtered, '印刷日時', '検収日時', target_time)
+            検収_入庫_かんばん数 = count_kanban_between(df_filtered, '検収日時', '順立装置入庫日時', target_time)
+            入庫_出庫_かんばん数 = count_kanban_between(df_filtered, '順立装置入庫日時', '順立装置出庫日時', target_time)
+            出庫_回収_かんばん数 = count_kanban_between(df_filtered, '順立装置出庫日時', '回収日時', target_time)
+
+            # 1時間ごとのデータを追加
+            kanban_counts_per_hour.append({
+                '時間': target_time.strftime('%Y-%m-%d %H:%M'),
+                '発注ー印刷': 発注_印刷_かんばん数,
+                '印刷ー検収': 印刷_検収_かんばん数,
+                '検収ー入庫': 検収_入庫_かんばん数,
+                '入庫ー出庫': 入庫_出庫_かんばん数,
+                '出庫ー回収': 出庫_回収_かんばん数
+            })
+
+        # DataFrameに変換
+        df_kanban_counts = pd.DataFrame(kanban_counts_per_hour)
+
+        # Plotlyを使ってアニメーションを作成
+        fig = px.bar(df_kanban_counts.melt(id_vars='時間', var_name='関所', value_name='かんばん数'),
+                    x='関所', y='かんばん数', color='関所', animation_frame='時間',
+                    range_y=[0, df_kanban_counts[['発注ー印刷', '印刷ー検収', '検収ー入庫', '入庫ー出庫', '出庫ー回収']].values.max()],
+                    title=f'{選択された品番} のかんばん数の変化')
+
+        # Streamlitで表示
+        st.plotly_chart(fig)
+
+        # 指定時刻が範囲内にあるかんばん数を計算する関数
+        def count_kanban_between(df, start_col, end_col, target_time):
+            return df[(df[start_col] <= target_time) & (df[end_col] >= target_time)].shape[0]
+
+        # Streamlit アプリケーション
+        st.title('かんばん数の可視化（アニメーション、複数品番対応）')
+
+        # タイムスタンプ関連の列を抽出
+        df_filtered = df[['品番', '納入日', '発注〜印刷LT', '発注〜検収LT', '発注〜順立装置入庫LT', '発注〜順立装置出庫LT', '発注〜回収LT', 
+                        '発注日時', '印刷日時', '検収日時', '順立装置入庫日時', '順立装置出庫日時', '回収日時']]
+        
+        # 時刻を datetime 型に変換
+        df_filtered['発注日時'] = pd.to_datetime(df_filtered['発注日時'], errors='coerce')
+        df_filtered['印刷日時'] = pd.to_datetime(df_filtered['印刷日時'], errors='coerce')
+        df_filtered['検収日時'] = pd.to_datetime(df_filtered['検収日時'], errors='coerce')
+        df_filtered['順立装置入庫日時'] = pd.to_datetime(df_filtered['順立装置入庫日時'], errors='coerce')
+        df_filtered['順立装置出庫日時'] = pd.to_datetime(df_filtered['順立装置出庫日時'], errors='coerce')
+        df_filtered['回収日時'] = pd.to_datetime(df_filtered['回収日時'], errors='coerce')
+
+        # 複数の品番を選択可能にする
+        品番選択肢 = df_filtered['品番'].unique()
+        選択された品番 = st.multiselect('品番を選択してください（複数選択可）', 品番選択肢)
+
+        # データを選択された品番にフィルタリング
+        df_filtered = df_filtered[df_filtered['品番'].isin(選択された品番)]
+
+        # 開始日と時間を選択できるようにする
+        開始日 = st.date_input('開始日を選択してください', pd.to_datetime('2023-10-31'), key="start_date_input_unique")
+        開始時間 = st.time_input('開始時間を選択してください', pd.to_datetime('11:00').time(), key="start_time_input_unique")
+
+        # 終了日と時間を選択できるようにする
+        終了日 = st.date_input('終了日を選択してください', pd.to_datetime('2023-10-31'), key="end_date_input_unique")
+        終了時間 = st.time_input('終了時間を選択してください', pd.to_datetime('14:00').time(), key="end_time_input_unique")
+
+        # 開始日時と終了日時を作成
+        開始日時 = pd.to_datetime(f'{開始日} {開始時間}')
+        終了日時 = pd.to_datetime(f'{終了日} {終了時間}')
+
+        # 1時間ごとに時間範囲を作成
+        時間範囲 = pd.date_range(start=開始日時, end=終了日時, freq='H')
+
+        # 各時間、各品番でのかんばん数を集計
+        kanban_counts_per_hour = []
+
+        for target_time in 時間範囲:
+            for 品番 in 選択された品番:
+                # 各関所でのかんばん数を集計
+                発注_印刷_かんばん数 = count_kanban_between(df_filtered[df_filtered['品番'] == 品番], '発注日時', '印刷日時', target_time)
+                印刷_検収_かんばん数 = count_kanban_between(df_filtered[df_filtered['品番'] == 品番], '印刷日時', '検収日時', target_time)
+                検収_入庫_かんばん数 = count_kanban_between(df_filtered[df_filtered['品番'] == 品番], '検収日時', '順立装置入庫日時', target_time)
+                入庫_出庫_かんばん数 = count_kanban_between(df_filtered[df_filtered['品番'] == 品番], '順立装置入庫日時', '順立装置出庫日時', target_time)
+                出庫_回収_かんばん数 = count_kanban_between(df_filtered[df_filtered['品番'] == 品番], '順立装置出庫日時', '回収日時', target_time)
+
+                # 1時間ごとのデータを追加
+                kanban_counts_per_hour.append({
+                    '品番': 品番,
+                    '時間': target_time.strftime('%Y-%m-%d %H:%M'),
+                    '発注ー印刷': 発注_印刷_かんばん数,
+                    '印刷ー検収': 印刷_検収_かんばん数,
+                    '検収ー入庫': 検収_入庫_かんばん数,
+                    '入庫ー出庫': 入庫_出庫_かんばん数,
+                    '出庫ー回収': 出庫_回収_かんばん数
+                })
+
+        # DataFrameに変換
+        df_kanban_counts = pd.DataFrame(kanban_counts_per_hour)
+
+        # データの中身を確認する
+        st.write(df_kanban_counts.head())
+
+        # Plotlyを使ってアニメーションを作成（品番ごとに色分け）
+        fig = px.bar(df_kanban_counts.melt(id_vars=['時間', '品番'], var_name='関所', value_name='かんばん数'),
+                    x='関所', y='かんばん数', color='品番', animation_frame='時間',
+                    range_y=[0, df_kanban_counts[['発注ー印刷', '印刷ー検収', '検収ー入庫', '入庫ー出庫', '出庫ー回収']].values.max()],
+                    title=f'選択された品番ごとのかんばん数の変化')
+
+        # Streamlitで表示
+        st.plotly_chart(fig)
+
     elif page == "📖 マニュアル":
+
+        df_raw = pd.read_csv("t.csv", encoding='shift_jis')
+
+        df_raw['年'] = df_raw['対象年月'].astype(str).str[:4]  # 最初の4文字を年として抽出
+        df_raw['月'] = df_raw['対象年月'].astype(str).str[4:6]  # 次の2文字を月として抽出
+
+        # データフレームを縦に展開
+        # id_varsで指定していない列を縦に展開
+        df_melted = df_raw.melt(id_vars=['対象年月','工場区分','計算区分','品番', '受入場所', '手配担当整備室', '手配区分', '年', '月'], 
+                                    var_name='日付', value_name='日量数')
+
+        # 日付列を整数型に変換（欠損値がある場合はそれを除外）
+        df_melted['日付'] = df_melted['日付'].str.extract(r'(\d+)')
+
+        # 欠損値を除外してから整数型に変換
+        df_melted = df_melted.dropna(subset=['日付'])  # NaN行を削除
+        df_melted['日付'] = df_melted['日付'].astype(int)
+
+        # 年・月・日を結合し、不正な日付はNaTに変換
+        df_melted['日付'] = pd.to_datetime(df_melted.apply(lambda row: f"{row['年']}-{row['月']}-{row['日付']}", axis=1), 
+                                        errors='coerce')
+
+        # 不正な日付（NaT）を除外
+        # 不正な日付（例えば、2月30日など）を含む行を除外
+        df_melted = df_melted.dropna(subset=['日付'])
+
+        st.dataframe(df_melted)
 
         #! 関数を呼び出してCSSを適用
         apply_custom_css()
@@ -649,5 +926,5 @@ def main():
 
 #! 本スクリプトが直接実行されたときに実行
 if __name__ == "__main__":
-    print("プログラムを起動します。")
+    print("プログラムが実行中です")
     main()
