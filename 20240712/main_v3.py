@@ -15,6 +15,9 @@ from read_v3 import read_data, process_Activedata
 import analysis_v3 # analysis_v3.pyが同じディレクトリにある前提
 import forecast_v3
 
+#! 自作ライブラリのimport
+from read_v3 import read_data, process_Activedata, read_syozailt_by_using_archive_data, read_activedata_by_using_archive_data,read_zaiko_by_using_archive_data
+
 #! 要因分析用の各ステップの実行フラグを保存する関数
 def save_flag_analysis(step1_flag, step2_flag, step3_flag, filename='temp/flag_analysis.pkl'):
     with open(filename, 'wb') as file:
@@ -612,7 +615,9 @@ def main():
     if main_menu == "🏠 ホーム":
         page = "🏠 ホーム"
     elif main_menu == "🔍 可視化":
-        page = "🔍 可視化"
+        #page = "🔍 可視化"
+        main_menu_visual = st.sidebar.radio("可視化ページ選択", ["関所別かんばん数可視化（アニメーション）","フレ可視化"], key='analysis')
+        page = main_menu_visual
     elif main_menu == "📊 分析":
         # 分析のサブメニュー
         main_menu_analysis = st.sidebar.radio("分析ページ選択", ["要因分析"], key='analysis')
@@ -685,7 +690,7 @@ def main():
     elif page == "要因分析":
         analysis_page()
 
-    elif page == "🔍 可視化":
+    elif page == "関所別かんばん数可視化（アニメーション）":
 
         #from plotly.subplots import make_subplots
         #import plotly.graph_objects as go
@@ -779,6 +784,187 @@ def main():
         st.plotly_chart(fig)
 
         #--------------------------------------------------------------------------------------------------------------------------
+    elif page == "フレ可視化":
+
+        #! 関数を呼び出してCSSを適用
+        apply_custom_css()
+
+        start_date = '2024-05-01-00'
+        end_date = '2024-08-31-00'
+
+        # Streamlit アプリケーション
+        st.title('フレ可視化')
+
+        hinban_seibishitsu_df = create_hinban_info()
+        # サイドバーに品番選択ボックスを作成
+        product = st.selectbox("品番を選択してください", hinban_seibishitsu_df['品番_整備室'])
+
+        #st.write()
+
+        #! 品番、整備室コードを抽出
+        part_number = product.split('_')[0]
+        seibishitsu = product.split('_')[1]
+    
+        activedata = read_activedata_by_using_archive_data(start_date, end_date, 0)
+        # 特定の品番の商品データを抽出
+        activedata = activedata[(activedata['品番'] == part_number) & (activedata['受入場所'] == seibishitsu)]
+        #st.dataframe(activedata)
+        activedata['日量数（箱数）']=activedata['日量数']/activedata['収容数']
+
+        #file_path = '中間成果物/所在管理MBデータ_統合済&特定日時抽出済.csv'
+        Timestamp_df = read_syozailt_by_using_archive_data(start_date, end_date)
+        # '更新日時'列に無効な日時データがある行を削除する
+        data_cleaned = Timestamp_df.dropna(subset=['検収日時'])
+        #st.dataframe(data_cleaned.head(50000))
+        # 特定の品番の商品データを抽出
+        data_cleaned = data_cleaned[(data_cleaned['品番'] == part_number) & (data_cleaned['整備室コード'] == seibishitsu)]
+        #data_cleaned = data_cleaned[ (data_cleaned['整備室コード'] == seibishitsu)]
+        # 日付部分を抽出
+        #st.dataframe(data_cleaned)
+        data_cleaned['納入日'] = pd.to_datetime(data_cleaned['納入日']).dt.date
+        # 納入日ごとにかんばん数をカウント
+        df_daily_sum = data_cleaned.groupby(data_cleaned['納入日']).size().reset_index(name='納入予定かんばん数')
+
+        #st.dataframe(df_daily_sum)
+
+        # 実績データの納入日も日付型に変換
+        activedata['納入日'] = activedata['日付']
+        activedata['納入日'] = pd.to_datetime(activedata['納入日'])
+        df_daily_sum['納入日'] = pd.to_datetime(df_daily_sum['納入日'])
+
+        # 再度、両データを納入日で結合
+        df_merged = pd.merge(df_daily_sum, activedata[['納入日', '日量数（箱数）']], on='納入日', how='left')
+
+        # 差分を計算
+        df_merged['フレ'] = df_merged['日量数（箱数）'] - df_merged['納入予定かんばん数']
+
+        #st.dataframe(df_merged)
+
+        # Streamlitで開始日と終了日を選択
+        #st.title("納入予定かんばん数と日量数の差分")
+        default_start_date = datetime.strptime('2024-05-01', '%Y-%m-%d').date()
+        start_date = st.date_input("開始日", value=default_start_date)
+        end_date = st.date_input("終了日", value=df_merged['納入日'].max())
+
+        # 開始日と終了日に基づいてデータをフィルタリング
+        filtered_data = df_merged[(df_merged['納入日'] >= pd.to_datetime(start_date)) &
+                                (df_merged['納入日'] <= pd.to_datetime(end_date))]
+
+        # フィルタリングされたデータの差分の折れ線グラフ作成
+        fig = px.line(filtered_data, x='納入日', y='フレ', title='納入フレ（日量箱数と納入予定かんばん数の差分）の推移')
+
+        # y=0に赤線を追加
+        fig.add_shape(
+            type='line',
+            x0=filtered_data['納入日'].min(), x1=filtered_data['納入日'].max(),
+            y0=0, y1=0,
+            line=dict(color='red', width=2),
+            name='フレ0'
+        )
+
+        # 赤線に名前を追加
+        fig.add_annotation(
+            x=filtered_data['納入日'].max(), y=0,
+            text="フレ0",
+            showarrow=False,
+            yshift=10,
+            font=dict(color="red", size=12)
+        )
+
+        # 土日を強調するために、納入日の曜日をチェック
+        filtered_data['weekday'] = pd.to_datetime(filtered_data['納入日']).dt.weekday
+
+        # 土日だけを抽出（5:土曜日, 6:日曜日）
+        weekends = filtered_data[filtered_data['weekday'] >= 5]
+
+        # グラフ描画後に土日を強調する縦線を追加
+        for date in weekends['納入日']:
+            fig.add_shape(
+                type='line',
+                x0=date, x1=date,
+                y0=filtered_data['フレ'].min(), y1=filtered_data['フレ'].max(),
+                line=dict(color='black', width=2),
+                name='土日'
+            )
+
+        # 1日単位で横軸のメモリを設定
+        fig.update_xaxes(dtick="D1")
+
+        # Streamlitでグラフを表示
+        st.plotly_chart(fig)
+
+        st.info("赤線より上は、実績＜内示。赤線より下は、実績＞内示")
+    
+        #------------------------------------------------------------------------------------------
+
+        # start_date = '2024-05-01-00'
+        # end_date = '2024-08-31-00'
+
+        # # データの読み込み（例: hinban_seibishitsu_df, activedataのデータは事前に準備）
+        # #hinban_seibishitsu_df = read_syozailt_by_using_archive_data(start_date, end_date)  # 品番・整備室のデータファイル
+        # #hinban_seibishitsu_df['納入日'] = pd.to_datetime(hinban_seibishitsu_df['納入日']).dt.date
+        # # 納入日ごとにかんばん数をカウント
+        # #hinban_seibishitsu_df = hinban_seibishitsu_df.groupby(hinban_seibishitsu_df['納入日']).size().reset_index(name='納入予定かんばん数')
+        # #activedata = read_activedata_by_using_archive_data(start_date, end_date, 0)
+
+        # # サイドバーに品番選択ボックスを作成
+        # selected_products = st.multiselect("品番を選択してください", hinban_seibishitsu_df['品番_整備室'].unique())
+
+        # # 複数品番を選択した場合に対応
+        # if selected_products:
+        #     # 選択された品番のデータを処理
+        #     filtered_data_list = []
+            
+        #     for product in selected_products:
+        #         part_number = product.split('_')[0]
+        #         seibishitsu = product.split('_')[1]
+                
+        #         # 特定の品番の商品データを抽出
+        #         activedata_filtered = activedata[(activedata['品番'] == part_number) & (activedata['受入場所'] == seibishitsu)]
+        #         activedata_filtered['日量数（箱数）'] = activedata_filtered['日量数'] / activedata_filtered['収容数']
+
+        #         # Timestampデータの処理
+        #         Timestamp_df = read_syozailt_by_using_archive_data(start_date, end_date)
+        #         data_cleaned = Timestamp_df.dropna(subset=['検収日時'])
+        #         data_cleaned = data_cleaned[(data_cleaned['品番'] == part_number) & (data_cleaned['整備室コード'] == seibishitsu)]
+                
+        #         # 日付の処理
+        #         data_cleaned['納入日'] = pd.to_datetime(data_cleaned['納入日']).dt.date
+        #         df_daily_sum = data_cleaned.groupby('納入日').size().reset_index(name='納入予定かんばん数')
+
+        #         # 実績データの納入日も日付型に変換
+        #         activedata_filtered['納入日'] = pd.to_datetime(activedata_filtered['日付'])
+        #         df_daily_sum['納入日'] = pd.to_datetime(df_daily_sum['納入日'])
+
+        #         # 両データを納入日で結合
+        #         df_merged = pd.merge(df_daily_sum, activedata_filtered[['納入日', '日量数（箱数）']], on='納入日', how='left')
+
+        #         # 差分を計算
+        #         df_merged['差分'] = df_merged['日量数（箱数）'] - df_merged['納入予定かんばん数']
+        #         df_merged['品番'] = part_number  # 品番情報を追加して区別
+                
+        #         filtered_data_list.append(df_merged)
+
+        #     # 複数の品番を結合
+        #     final_filtered_data = pd.concat(filtered_data_list, ignore_index=True)
+
+        #     st.dataframe(final_filtered_data)
+
+        #     # Streamlitで開始日と終了日を選択
+        #     st.title("納入予定かんばん数と日量数の差分")
+        #     start_date = st.date_input("開始日", value=final_filtered_data['納入日'].min(), key="start_date")
+        #     end_date = st.date_input("終了日", value=final_filtered_data['納入日'].max(), key="end_date")
+
+        #     # 開始日と終了日に基づいてデータをフィルタリング
+        #     filtered_data = final_filtered_data[(final_filtered_data['納入日'] >= pd.to_datetime(start_date)) &
+        #                                         (final_filtered_data['納入日'] <= pd.to_datetime(end_date))]
+
+        #     # フィルタリングされたデータの差分の折れ線グラフ作成（品番ごとに区別）
+        #     fig = px.line(filtered_data, x='納入日', y='差分', color='品番', title='納入予定かんばん数と日量数の差分（複数品番対応）')
+
+        #     # Streamlitでグラフを表示
+        #     st.plotly_chart(fig)
+
 
     elif page == "📖 マニュアル":
 

@@ -20,6 +20,7 @@ def read_data(start_date, end_date):
     #DBから取得するかのフラグ
     #DBに接続できない環境なら利用
     #対応日付は'2024-05-01-00'から'2024-08-31-00'
+    flag_DB_logi = 0
     flag_DB = 0
 
     #!-----------------------------------------------------------------------
@@ -28,11 +29,11 @@ def read_data(start_date, end_date):
     #! Return：teikibin_df（前処理済みのろじれこデータ）
     #!-----------------------------------------------------------------------
     #* ＜DBからデータ取得する場合＞
-    if flag_DB == 1:
+    if flag_DB_logi == 1:
         teikibin_df = process_teikibin(start_date, end_date)
         teikibin_df['日時'] = pd.to_datetime(teikibin_df['日時'])
     #* ＜ローカルデータ利用する場合＞
-    elif flag_DB == 0:
+    elif flag_DB_logi == 0:
         file_path = '中間成果物/定期便前処理.csv'
         teikibin_df = pd.read_csv(file_path, encoding='shift_jis')
         teikibin_df['日時'] = pd.to_datetime(teikibin_df['日時'])
@@ -52,12 +53,16 @@ def read_data(start_date, end_date):
     Timestamp_df = read_syozailt_by_using_archive_data(start_date, end_date)
     #! 実行結果の確認
     st.header("✅所在管理リードタイムデータの読み込み完了しました")
-    st.dataframe(Timestamp_df)
+    st.dataframe(Timestamp_df.head(50000))
 
     #! 品番＆仕入先＆仕入先工場のマスターテーブルを作成する
     # ユニークな組み合わせを抽出
     # todo MBテーブルなので１Yと１Zに絞られている。将来的には抽出方法の変更が必要
-    unique_hinban_plant = Timestamp_df[['品番', '仕入先名', '仕入先工場名']].drop_duplicates()
+    unique_hinban_plant = Timestamp_df[['品番', '仕入先名', '仕入先工場名','整備室コード']].drop_duplicates()
+    unique_hinban_plant = unique_hinban_plant.rename(columns={'整備室コード':'受入場所'})# コラム名変更
+    unique_hinban_plant_cleaned = unique_hinban_plant.drop_duplicates(subset='品番',keep = False)
+    unique_hinban_plant_with_supplier_info = unique_hinban_plant[unique_hinban_plant['仕入先名'].notna()]
+    unique_hinban_plant = pd.concat([unique_hinban_plant_cleaned, unique_hinban_plant_with_supplier_info]).drop_duplicates(subset='品番')
     #! 結果をCSVに保存（必須。次のActivedataの読込で使用する）
     unique_hinban_plant.to_csv('temp/マスター_品番&仕入先名&仕入先工場名.csv', index=False, encoding='shift_jis')
 
@@ -79,7 +84,7 @@ def read_data(start_date, end_date):
     #! Return：zaiko_df（在庫推移MBのテーブルデータ）
     #!-----------------------------------------------------------------------
     # ↓アーカイブデータと所在管理DBの読み込み
-    zaiko_df = read_zaiko__by_using_archive_data(start_date, end_date)
+    zaiko_df = read_zaiko_by_using_archive_data(start_date, end_date)
     #!実行結果の確認
     st.header("✅在庫データの読み込み完了しました")
     st.dataframe(zaiko_df.head(50000))#表示できる限界の200MBを超えるため部分的に表示
@@ -489,7 +494,7 @@ def read_zaiko(start_date, end_date):#! 在庫推移MBのデータ取得
 
     return df
 
-def read_zaiko__by_using_archive_data(start_date, end_date):#! 在庫推移MBのデータ取得（アーカイブデータを使用して）
+def read_zaiko_by_using_archive_data(start_date, end_date):#! 在庫推移MBのデータ取得（アーカイブデータを使用して）
         #* アーカイブ期間、差分期間の計算 -----------------------------------------
         # 保存先のフォルダー
         folder_path = 'archive_data/rack'
@@ -823,7 +828,9 @@ def read_activedata_from_IBMDB2(start_date, end_date, ver):#! Active、資材参
     merged_df = pd.merge(tehaisu_melt_df, tehaiunyo_df, on=['品番','受入場所'], how='left')
 
     #! 仕入先と仕入先工場名を統合
-    merged_df = pd.merge(merged_df, unique_hinban_and_plant, on=['品番'], how='left')
+    merged_df['品番'] = merged_df['品番'].str.replace('="', '').str.replace('"', '').str.replace('=', '').str.replace('-', '').str.replace(' ', '')
+    unique_hinban_and_plant['品番'] = unique_hinban_and_plant['品番'].str.replace('="', '').str.replace('"', '').str.replace('=', '').str.replace('-', '').str.replace(' ', '')
+    merged_df = pd.merge(merged_df, unique_hinban_and_plant, on=['品番','受入場所'], how='left')
     merged_df = merged_df.rename(columns={'仕入先名':'仕入先名/工場名'})# コラム名変更
     merged_df = merged_df.rename(columns={'仕入先工場名': '発送場所名'})# コラム名変更
 

@@ -33,7 +33,7 @@ import pickle
 from sklearn.preprocessing import StandardScaler
 
 #! 自作ライブラリのimport
-from read_v3 import read_data, process_Activedata, read_syozailt_by_using_archive_data, read_activedata_by_using_archive_data,read_zaiko__by_using_archive_data
+from read_v3 import read_data, process_Activedata, read_syozailt_by_using_archive_data, read_activedata_by_using_archive_data,read_zaiko_by_using_archive_data
 
 def show_forecast( unique_product, start_datetime, selected_zaiko):
 
@@ -55,7 +55,7 @@ def show_forecast( unique_product, start_datetime, selected_zaiko):
     #!----------------------------------------------------------------------- 
     #! 自動ラックの在庫データの読み込みと処理
     #!-----------------------------------------------------------------------
-    zaiko_df = read_zaiko__by_using_archive_data(start_date, end_date)
+    zaiko_df = read_zaiko_by_using_archive_data(start_date, end_date)
     # 品番列の空白を削除
     zaiko_df['品番'] = zaiko_df['品番'].str.strip()
     # '計測日時'をdatetime型に変換
@@ -78,9 +78,13 @@ def show_forecast( unique_product, start_datetime, selected_zaiko):
     Timestamp_df = read_syozailt_by_using_archive_data(start_date, end_date)
     # '更新日時'列に無効な日時データがある行を削除する
     data_cleaned = Timestamp_df.dropna(subset=['検収日時'])
+    st.dataframe(data_cleaned.head(50000))
+    # 特定の品番の商品データを抽出
+    data_cleaned = data_cleaned[(data_cleaned['品番'] == product) & (data_cleaned['整備室コード'] == seibishitsu)]
     # 時間ごとにグループ化し、各時間でのかんばん数をカウントする
     data_cleaned['日時'] = data_cleaned['検収日時'].dt.floor('H')  # 時間単位に丸める
     hourly_kanban_count = data_cleaned.groupby('日時').size().reset_index(name='納入予定かんばん数')
+    #st.dataframe(hourly_kanban_count)
 
     # 時間の範囲を決定し、欠損時間帯を補完する
     full_time_range = pd.date_range(start=hourly_kanban_count['日時'].min(),end=hourly_kanban_count['日時'].max(),freq='H')
@@ -100,10 +104,10 @@ def show_forecast( unique_product, start_datetime, selected_zaiko):
     #!-----------------------------------------------------------------------
     #! Activedataの処理
     #!-----------------------------------------------------------------------
-    activedata = read_activedata_by_using_archive_data(start_date, end_date,0)
+    activedata = read_activedata_by_using_archive_data(start_date, end_date, 0)
     # 特定の品番の商品データを抽出
     activedata = activedata[activedata['品番'] == product]
-    st.dataframe(activedata)
+    #st.dataframe(activedata)
     #! 稼働時間で割る処理 (休憩時間の考慮が必要か？)
     activedata['日量数（箱数）'] = activedata['日量数']/activedata['収容数']
     activedata['日量数（箱数）/稼働時間'] = activedata['日量数（箱数）'] / 16.5

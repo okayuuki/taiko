@@ -689,6 +689,10 @@ def step2(data, rf_model, X, start_index, end_index, step3_flag, highlight_time=
 #! ステップ３の処理
 def step3(bar_df, df2, selected_datetime, line_df):
 
+    st.dataframe(df2)
+    st.dataframe(line_df)
+    st.dataframe(bar_df)
+
     #! 折り返し線を追加
     st.markdown("---")
 

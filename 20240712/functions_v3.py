@@ -1180,22 +1180,45 @@ def display_shap_contributions(df1_long):
                 return value + str(row['要因の値'])
         return row['要因の値']
 
+    ##st.dataframe(top_positive)
+    #st.dataframe(top_negative)
+
+    #!　すべて在庫増、在庫減の時があり、データフレームが空の時もあるので、
     # データフレーム全体に関数を適用し、'要因の値'列を更新
-    top_positive['要因の値'] = top_positive.apply(update_factor_value, axis=1)
-    top_negative['要因の値'] = top_negative.apply(update_factor_value, axis=1)
+    if len(top_positive) != 0:
+        top_positive['要因の値'] = top_positive.apply(update_factor_value, axis=1)
+        #top_negative['要因の値'] = top_negative.apply(update_factor_value, axis=1)
 
-    styled_positive = top_positive.style.pipe(set_header_color, 'lightcoral')
-    styled_positive = styled_positive.apply(bar_chart_red, subset=['寄与度（SHAP値）割合'])
+        styled_positive = top_positive.style.pipe(set_header_color, 'lightcoral')
+        styled_positive = styled_positive.apply(bar_chart_red, subset=['寄与度（SHAP値）割合'])
 
-    styled_negative = top_negative.style.pipe(set_header_color, 'lightblue')
-    styled_negative = styled_negative.apply(bar_chart_blue, subset=['寄与度（SHAP値）割合'])
+        #styled_negative = top_negative.style.pipe(set_header_color, 'lightblue')
+        #styled_negative = styled_negative.apply(bar_chart_blue, subset=['寄与度（SHAP値）割合'])
 
-    # テーブル表示（インデックスを非表示にする）
-    st.subheader('在庫増に関係する要因ランキング')
-    st.write(styled_positive.hide(axis="index").to_html(), unsafe_allow_html=True)
+        # テーブル表示（インデックスを非表示にする）
+        st.subheader('在庫増に関係する要因ランキング')
+        st.write(styled_positive.hide(axis="index").to_html(), unsafe_allow_html=True)
 
-    st.subheader('在庫減に関係する要因ランキング')
-    st.write(styled_negative.hide(axis="index").to_html(), unsafe_allow_html=True)
+        #st.subheader('在庫減に関係する要因ランキング')
+        #st.write(styled_negative.hide(axis="index").to_html(), unsafe_allow_html=True)
+
+    # データフレーム全体に関数を適用し、'要因の値'列を更新
+    if len(top_negative) != 0:
+        #top_positive['要因の値'] = top_positive.apply(update_factor_value, axis=1)
+        top_negative['要因の値'] = top_negative.apply(update_factor_value, axis=1)
+
+        #styled_positive = top_positive.style.pipe(set_header_color, 'lightcoral')
+        #styled_positive = styled_positive.apply(bar_chart_red, subset=['寄与度（SHAP値）割合'])
+
+        styled_negative = top_negative.style.pipe(set_header_color, 'lightblue')
+        styled_negative = styled_negative.apply(bar_chart_blue, subset=['寄与度（SHAP値）割合'])
+
+        # テーブル表示（インデックスを非表示にする）
+        #st.subheader('在庫増に関係する要因ランキング')
+        #st.write(styled_positive.hide(axis="index").to_html(), unsafe_allow_html=True)
+
+        st.subheader('在庫減に関係する要因ランキング')
+        st.write(styled_negative.hide(axis="index").to_html(), unsafe_allow_html=True)
     
 
 #def visualize_stock_trend(data):
