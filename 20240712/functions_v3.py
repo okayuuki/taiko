@@ -87,6 +87,10 @@ def calculate_hourly_counts(df, part_number, seibishitsu, time_col, start_date, 
 
     #st.dataframe(filtered_df.columns)
 
+    #実行結果の確認
+    st.header("品番＆整備室コードで抽出します")
+    st.dataframe(filtered_df)
+
     #! 拠点所在地計算
     kyoten = filtered_df['拠点所番地'].unique()[0]
 
@@ -96,6 +100,8 @@ def calculate_hourly_counts(df, part_number, seibishitsu, time_col, start_date, 
     # 結果を表示
     #st.header("所在管理LTのユニークな整備室コード")
     #st.dataframe(unique_values)
+    #拠点所在地確認
+    #st.info(f"拠点所在値：{kyoten}")
     
     # イベント時間を1時間単位表記にする
     filtered_df['イベント時間'] = pd.to_datetime(filtered_df[time_col], errors='coerce').dt.floor('H')
@@ -187,16 +193,18 @@ def calculate_business_time_reception(row):
     # 日数として計算し、小数点形式に変換
     return calculate_business_time_base(row, order_datetime, warehouse_datetime)
 
-def calculate_median_lt(product_code,df):
+#! 〇から順立装置のリードタイムの中央値を計算する
+def calculate_median_lt( product_code, df):
     
     """
-    指定された品番の発注〜順立装置入庫LTの中央値を計算する関数。
+    指定された品番の○○〜順立装置入庫LTの中央値を計算する関数。
 
     Parameters:
     product_code (str): 品番
+    df：所在管理LTのデータ
 
     Returns:
-    float: 発注〜順立装置入庫LTの中央値
+    float: ○○〜順立装置入庫LTの中央値
     """
     
     # 指定された品番のデータをフィルタリング
@@ -206,15 +214,17 @@ def calculate_median_lt(product_code,df):
     if filtered_df.empty:
         return None
 
-    # '発注〜順立装置入庫LT'
+    # '○○〜順立装置入庫LT'
     filtered_df['発注〜順立装置入庫LT（非稼動日削除）'] = filtered_df.apply(calculate_business_time_order, axis=1)
     filtered_df['検収〜順立装置入庫LT（非稼動日削除）'] = filtered_df.apply(calculate_business_time_reception, axis=1)
+
+    #st.dataframe(filtered_df)
 
     # フィルタリングされたデータが空かどうかを再チェック
     if filtered_df.empty:
         return None
 
-    # '発注〜順立装置入庫LT'の中央値を計算
+    # '○○〜順立装置入庫LT'の中央値を計算
     median_value_order = filtered_df['発注〜順立装置入庫LT（非稼動日削除）'].median()
     median_value_reception = filtered_df['検収〜順立装置入庫LT（非稼動日削除）'].median()
     
@@ -403,6 +413,11 @@ def calculate_elapsed_time_since_last_dispatch(lagged_features):
 
     # 出庫間隔の中央値を計算
     median_interval = dispatch_intervals.median()
+
+    #! median_intervalがNaNでないかを確認し、デフォルト値を設定
+    #* メモ）出庫数が1以下の場合、出庫の間隔を計算できずNaNになり、この後のint(median_interval)でエラーが発生するため
+    if pd.isna(median_interval):
+        median_interval = 0  # NaNの場合はデフォルト値0を設定
     
     #print("出庫間隔の中央値（行数）:", median_interval)
     
@@ -467,52 +482,58 @@ def process_shiresakibin_flag(lagged_features, arrival_times_df):
         (arrival_times_df['発送場所名'].isin(lagged_features['発送場所名'])) &
         (arrival_times_df['受入'].isin(lagged_features['整備室コード']))
     ]
+
+    st.header("✅以下の仕入先ダイヤを検索します")
+    st.info(f"**仕入先名：{lagged_features['仕入先名'].unique()}、発送場所名：{lagged_features['発送場所名'].unique()}、整備室コード：{lagged_features['整備室コード'].unique()}")
     
-    #! 実行結果の確認
-    st.header("✅一致する仕入先ダイヤを抽出します")
-    st.dataframe(matched_arrival_times_df)
-
-    # データフレームが空かどうかを確認
+    #! データフレームが空かどうかを確認
     if matched_arrival_times_df.empty:
-        st.error("一致する仕入先ダイヤが見つかりません。プログラムを停止します。")
+        st.error("**一致する仕入先ダイヤが見つかりません。プログラムを停止します。**")
+        #st.error(f"**見つからなかったダイヤ：{lagged_features['仕入先名'].unique()},{lagged_features['発送場所名'].unique()},{lagged_features['整備室コード'].unique()}")
+
+    else:
+        #! 実行結果の確認
+        st.header("✅一致する仕入先ダイヤを抽出します")
+        st.dataframe(matched_arrival_times_df)
         
-    #? コラム名変更
-    matched_arrival_times_df = matched_arrival_times_df.rename(columns={'受入': '整備室コード'})
-    # arrival_times_dfの仕入先名列をlagged_featuresに結合
-    lagged_features2 = lagged_features.merge(matched_arrival_times_df, on=['仕入先名','発送場所名','整備室コード'], how='left')
+        #? コラム名変更
+        matched_arrival_times_df = matched_arrival_times_df.rename(columns={'受入': '整備室コード'})
+        # arrival_times_dfの仕入先名列をlagged_featuresに結合
+        lagged_features2 = lagged_features.merge(matched_arrival_times_df, on=['仕入先名','発送場所名','整備室コード'], how='left')
 
-    # '納入便'を含む列名を見つける
-    # columns_delivery_numは'納入便'を含む列名
-    columns_delibery_num = find_columns_with_word_in_name(lagged_features2, '納入便')
+        # '納入便'を含む列名を見つける
+        # columns_delivery_numは'納入便'を含む列名
+        columns_delibery_num = find_columns_with_word_in_name(lagged_features2, '納入便')
 
-    # 納入便がつく列をint型に変換
-    lagged_features2[columns_delibery_num] = pd.to_numeric(lagged_features2[columns_delibery_num], errors='coerce').fillna(0).astype(int)
+        # 納入便がつく列をint型に変換
+        lagged_features2[columns_delibery_num] = pd.to_numeric(lagged_features2[columns_delibery_num], errors='coerce').fillna(0).astype(int)
 
-    # '平均納入時間' を含む列名を見つける
-    # columns_delibery_timesは'平均納入時間' を含む列名
-    columns_delibery_times = find_columns_with_word_in_name(lagged_features2, '平均納入時間')
-    # 納入便の列に基づいて対応する「早着」「定刻」「遅着」の情報を追加
-    lagged_features2['早着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_早着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
-    lagged_features2['定刻'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_定刻'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
-    lagged_features2['遅着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_遅着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+        # '平均納入時間' を含む列名を見つける
+        # columns_delibery_timesは'平均納入時間' を含む列名
+        columns_delibery_times = find_columns_with_word_in_name(lagged_features2, '平均納入時間')
+        # 納入便の列に基づいて対応する「早着」「定刻」「遅着」の情報を追加
+        lagged_features2['早着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_早着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+        lagged_features2['定刻'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_定刻'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
+        lagged_features2['遅着'] = lagged_features2.apply(lambda row: row[f'{int(row[columns_delibery_num])}便_遅着'] if row[columns_delibery_num] != 0 else '00:00:00', axis=1)
 
-    #st.dataframe(lagged_features2)
+        st.header("✅早着定刻遅着の基準を計算します")
+        st.dataframe(lagged_features2)
 
-    # timedelta形式に変換
-    lagged_features2[columns_delibery_times] = pd.to_timedelta(lagged_features2[columns_delibery_times])
+        # timedelta形式に変換
+        lagged_features2[columns_delibery_times] = pd.to_timedelta(lagged_features2[columns_delibery_times])
 
-    # 変換を適用
-    lagged_features2[columns_delibery_times] = lagged_features2[columns_delibery_times].apply(timedelta_to_hhmmss)
+        # 変換を適用
+        lagged_features2[columns_delibery_times] = lagged_features2[columns_delibery_times].apply(timedelta_to_hhmmss)
 
-    # 新しい列を追加し、条件に基づいて「仕入先便到着フラグ」を設定
-    lagged_features2['仕入先便到着フラグ'] = lagged_features2.apply(set_arrival_flag, columns_delibery_num=columns_delibery_num,columns_delibery_times=columns_delibery_times, axis=1)
+        # 新しい列を追加し、条件に基づいて「仕入先便到着フラグ」を設定
+        lagged_features2['仕入先便到着フラグ'] = lagged_features2.apply(set_arrival_flag, columns_delibery_num=columns_delibery_num,columns_delibery_times=columns_delibery_times, axis=1)
 
-    # 特定の文字列を含む列を削除する
-    lagged_features2 = drop_columns_with_word(lagged_features2, '早着')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '定刻')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '遅着')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '受入')
-    lagged_features2 = drop_columns_with_word(lagged_features2, '平均納入時間')
+        # 特定の文字列を含む列を削除する
+        lagged_features2 = drop_columns_with_word(lagged_features2, '早着')
+        lagged_features2 = drop_columns_with_word(lagged_features2, '定刻')
+        lagged_features2 = drop_columns_with_word(lagged_features2, '遅着')
+        lagged_features2 = drop_columns_with_word(lagged_features2, '受入')
+        lagged_features2 = drop_columns_with_word(lagged_features2, '平均納入時間')
 
     return lagged_features2
 
