@@ -721,6 +721,7 @@ def calculate_inventory_ratios(line_df, Activedata):
 
         return ratios
 
+#! ステップ2の実行時
 def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
 
     """
@@ -788,6 +789,7 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
     # タブの作成
     tab1, tab2 = st.tabs(["実績値を確認する", "AI推定値を確認する"])
 
+    #! 実績値を確認する
     with tab1:
         # 在庫折れ線グラフの初期化
         fig_line = go.Figure()
@@ -829,10 +831,11 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
 
         with col2:
             st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
-        
+    
+    #! AI推定値を確認する
     with tab2:
 
-        st.write("AIはデータのみから推定するので間違う場合があります")
+        st.write("本ツールは、収集されたデータに統計的な計算を行い、要因を分析するためのものであり、分析結果が実際の現場での出来事と完全に一致するとは限りません。そのため、「寄与度が低い」と判定された要因の中にも、重要な要因（真因）が含まれている可能性があります。本ツールの結果は、現場での状況と併せてご活用ください。")
 
         # 在庫折れ線グラフの初期化
         fig_line = go.Figure()
@@ -852,6 +855,10 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
             mode='lines+markers',
             name='AI推定値'
         ))
+        #st.dataframe(y_pred_subset)
+        #st.write(len(y_pred_subset))
+        #st.dataframe(y_base_subset)
+        #st.write(len(y_base_subset))
 
         # 共通のラインを追加
         fig_line = add_common_traces(fig_line, line_df, Activedata)
@@ -868,6 +875,7 @@ def plot_inventory_graph(line_df, y_pred_subset, y_base_subset, Activedata):
         # Plotlyのイベントを使用して強調をトリガーし、クリックした時刻を取得して表示
         st.plotly_chart(fig_line, use_container_width=True, events=['plotly_click'], event_handler=highlight_bar_script)
 
+#! STEP3実行後のSTEP2の結果を表示する
 def plot_inventory_graph2(line_df, y_pred_subset, y_base_subset, Activedata, highlight_time):
 
     """
@@ -1076,6 +1084,8 @@ def display_shap_contributions(df1_long):
             return "「西尾東が部品置き場で滞留していない」"
         elif variable.startswith("No9_"):
             return "「定期便にいつもよりモノが多い」"
+        elif variable.startswith("No10_"):
+            return "「発注がある」"
         else:
             return None  # 一致するものがない場合は None を返す
         
@@ -1096,9 +1106,11 @@ def display_shap_contributions(df1_long):
         elif variable.startswith("No7_"):
             return "「間口の充足率が高い」"
         elif variable.startswith("No8_"):
-            return "「西尾東が部品置き場で滞留している」"
+            return "「西尾東か部品置き場で滞留している」"
         elif variable.startswith("No9_"):
             return "「定期便にいつもよりモノが少ない」"
+        elif variable.startswith("No10_"):
+            return "「発注がない」"
         else:
             return None  # 一致するものがない場合は None を返す
         
@@ -1182,11 +1194,12 @@ def display_shap_contributions(df1_long):
     
     # 提供された辞書に基づいてマッピングを定義
     mapping = {
-        '発注かんばん': '合計発注かんばん数=',
+        '発注かんばん': '発注かんばん数-便Ave=',
+        '発注が': '発注有無（0：発注無し、1：発注あり）=',
         '納入数': '合計納入フレ数（負は未納、正は挽回数を表す）=',
-        '計画組立生産台数': '合計計画組立生産台数=',
-        '稼働率': '平均稼働率=',
-        '部品置き場': '部品置き場からの入庫かんばん数=',
+        '計画組立生産台数': '過去出庫からの合計計画組立生産台数（出庫時に初期化される）=',
+        '稼働率': '過去出庫からの平均稼働率=',
+        '部品置き場': '部品置き場の滞留かんばん数=',
         '定期便にいつもより': '定期便の荷量が少ない確率=',
         '定期便の': '実績荷役時間/計画=',
         '定期便が': '実績荷役時間/計画=',
