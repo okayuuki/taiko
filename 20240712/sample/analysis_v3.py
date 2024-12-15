@@ -184,7 +184,10 @@ def show_analysis(product):
         lagged_features = lagged_features.rename(columns={'仕入先工場名': '発送場所名'})# コラム名変更
 
         #! 過去の出庫からの経過時間を計算
-        lagged_features, median_interval = calculate_elapsed_time_since_last_dispatch(lagged_features)
+        lagged_features, median_interval_out = calculate_elapsed_time_since_last_dispatch(lagged_features)
+
+        # 0を除いた数値の中央値を計算
+        median_value_out = lagged_features[lagged_features['出庫かんばん数（t）'] != 0]['出庫かんばん数（t）'].median()
 
         #! lagged_featuresに変数追加
         #! What：「拠点所番地」列をもとに在庫数を紐づける
@@ -243,9 +246,12 @@ def show_analysis(product):
         lagged_features = pd.merge(lagged_features, kado_df, on='日時', how='left')
 
         #! 入庫予定かんばん数（入庫可能かんばん数）を計算する関数
-        def calculate_delivery_kanban(row, df, delivery_column, target_column, lead_time=5):
+        def calculate_delivery_kanban_with_time_delay(row, df, delivery_column, target_column, lead_time=5):
             """
-            納入かんばん数と入庫予定かんばん数を計算する汎用関数。
+            納入かんばん数の時間遅れを計算する汎用関数。
+
+            この関数は、指定されたリードタイムと稼働フラグを基に納入かんばん数を入庫予定かんばん数に変換し、
+            データフレームの該当する行に値を加算します。
 
             Args:
                 row (pd.Series): データフレームの行データ。
@@ -255,7 +261,7 @@ def show_analysis(product):
                 lead_time (int): 基本リードタイム（時間単位）。デフォルトは5時間。
 
             Returns:
-                None
+                None: 入庫予定かんばん数が更新されるが、明示的な戻り値はありません。
             """
             current_time = row['日時']
             kanban_count = row[delivery_column]
@@ -286,9 +292,9 @@ def show_analysis(product):
             return None
         
         #!　入庫かんばん数を起点に時刻を補正する関数
-        def calculate_adjusted_kanban(df, target_column):
+        def adjust_time_based_on_incoming_kanban(df, target_column):
             """
-            調整済みのかんばん数を計算する関数。
+            入庫かんばん数をもとに時刻を補正する関数。
             
             Args:
                 df (pd.DataFrame): 処理対象のデータフレーム。
@@ -324,7 +330,7 @@ def show_analysis(product):
             return df
         
         #!　入庫予定かんばん数を起点に滞留かんばん数を計算
-        def calculate_test_tairyukanban(df, target_column):
+        def calculate_tairyukanban(df, target_column):
             """
             調整済みのかんばん数を計算する関数。
             
@@ -365,17 +371,17 @@ def show_analysis(product):
         lagged_features['納入かんばん数_時間遅れ（t）']=0
         #lagged_features['発注かんばん数_時間遅れ（t）']=0
         # 各行について関数を適用
-        lagged_features.apply(lambda row: calculate_delivery_kanban(row, lagged_features, delivery_column='納入かんばん数（t）', target_column='納入かんばん数_時間遅れ（t）', lead_time=5), axis=1)
+        lagged_features.apply(lambda row: calculate_delivery_kanban_with_time_delay(row, lagged_features, delivery_column='納入かんばん数（t）', target_column='納入かんばん数_時間遅れ（t）', lead_time=5), axis=1)
         #todo 発注かんばん数については稼働時間抜きの正確なリードタイムがわからないため今は前のやつを流用
-        #lagged_features.apply(lambda row: calculate_delivery_kanban(row, lagged_features, delivery_column='発注かんばん数（t）', target_column='発注かんばん数_時間遅れ（t）', lead_time=median_lt_order), axis=1)
+        #lagged_features.apply(lambda row: calculate_delivery_kanban_with_time_delay(row, lagged_features, delivery_column='発注かんばん数（t）', target_column='発注かんばん数_時間遅れ（t）', lead_time=median_lt_order), axis=1)
 
         # 納入かんばん数_時間遅れは入庫予定かんばん数
         lagged_features['入庫予定かんばん数（t）'] = lagged_features['納入かんばん数_時間遅れ（t）']
         # 入庫予定かんばん数を在庫増減に合わせて時刻を補正。前後2時間は正常
-        lagged_features = calculate_adjusted_kanban(lagged_features, target_column="入庫予定かんばん数（t）")
-        #lagged_features = calculate_adjusted_kanban(lagged_features, target_column="発注かんばん数_時間遅れ（t）")
+        lagged_features = adjust_time_based_on_incoming_kanban(lagged_features, target_column="入庫予定かんばん数（t）")
+        #lagged_features = adjust_time_based_on_incoming_kanban(lagged_features, target_column="発注かんばん数_時間遅れ（t）")
         #todo 滞留かんばん数test
-        lagged_features = calculate_test_tairyukanban(lagged_features, target_column="入庫かんばん数（t）")
+        lagged_features = calculate_tairyukanban(lagged_features, target_column="入庫かんばん数（t）")
 
         #todo 臨時計算、発注入庫Ltを非稼働時間削除で計算するまでの間
         def calculate_best_kanban_with_delay(df):
@@ -643,11 +649,13 @@ def show_analysis(product):
             timelag_No5 = 2
             data[f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）'] = data[f'仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）']
             
-            data['No6_定期便出発状況（t-4~t-6）'] = data['定期便出発状況（t-4~t-6）']
+            #data['No6_定期便出発状況（t-4~t-6）'] = data['定期便出発状況（t-4~t-6）']
             
             delay_No7 = end_hours_ago
             timelag_No7 = timelag
             data[f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）'] = data[f'間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）']
+            # 充足率が1より小さい場合、0に更新
+            data.loc[data[f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）'] < 1, f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）'] = 0
             
             delay_No8 = end_hours_ago
             timelag_No8 = timelag
@@ -686,9 +694,11 @@ def show_analysis(product):
             #st.dataframe(data)
 
             # 発注フラグ_時間遅れ（t）を設定
-            data["No10_発注フラグ_時間遅れ（t-{delay_No1}~t-{delay_No1+timelag_No1}）"] = data["発注かんばん数_時間遅れ（t）"].apply(lambda x: 1 if x > 0 else 0)
+            data[f"No10_発注フラグ_時間遅れ（t-{delay_No1}~t-{delay_No1+timelag_No1}）"] = data["発注かんばん数_時間遅れ（t）"].apply(lambda x: 1 if x > 0 else 0)
 
-            data['発注かんばん数_時間遅れ（t）'] = data['発注かんばん数_時間遅れ（t）'] - data['便Ave']
+            data['発注かんばん数_時間遅れ（t）'] = data['発注かんばん数_時間遅れ（t）'] #- data['便Ave']#todo 便Aveどうする？
+            # 発注フラグが0の行に対して、発注かんばん数_時間遅れ（t）を0に更新
+            data.loc[data[f"No10_発注フラグ_時間遅れ（t-{delay_No1}~t-{delay_No1+timelag_No1}）"] == 0, '発注かんばん数_時間遅れ（t）'] = 0
             data[f'No1_発注かんばん数（t-{delay_No1}~t-{delay_No1+timelag_No1}）'] = data['発注かんばん数_時間遅れ（t）']
 
             data[f'No2_計画組立生産台数_加重平均（t-{delay_No2}~t-{delay_No2+timelag_No2}）'] = data["計画生産台数_加重平均済_出庫数考慮"]
@@ -709,11 +719,11 @@ def show_analysis(product):
                     f'No3_計画達成率_加重平均（t-{delay_No3}~t-{delay_No3+timelag_No3}）',
                     #f'No4_納入フレ（t-{delay_No4}~t-{delay_No4+timelag_No4}）',
                     f'No5_仕入先便到着状況（t-{delay_No5}~t-{delay_No5+timelag_No5}）',
-                    'No6_定期便出発状況（t-4~t-6）',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
+                    #'No6_定期便出発状況（t-4~t-6）',#'荷役時間(t-4)','荷役時間(t-5)','荷役時間(t-6)',
                     f'No7_間口の平均充足率（t-{delay_No7}~t-{delay_No7+timelag_No7}）',#f'間口_A1の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_A2の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B1の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B2の充足率（t-{end_hours_ago}~t-{best_range_order}）',f'間口_B3の充足率（t-{end_hours_ago}~t-{best_range_order}）', f'間口_B4の充足率（t-{end_hours_ago}~t-{best_range_order}）',
                     f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）',#f'部品置き場からの入庫（t-{end_hours_ago}~t-{best_range_order}）',f'部品置き場で滞留（t-{end_hours_ago}~t-{best_range_order}）',
                     #f'No9_定期便にモノ無し（t-{delay_No9}~t-{delay_No9+timelag_No9}）']
-                    "No10_発注フラグ_時間遅れ（t-{delay_No1}~t-{delay_No1+timelag_No1}）"
+                    f"No10_発注フラグ_時間遅れ（t-{delay_No1}~t-{delay_No1+timelag_No1}）"
                     ]]
             
             #確認：実行結果
@@ -724,6 +734,43 @@ def show_analysis(product):
             # todo-----------------------------------------------------------------------------------------------------------------
             #y = data[f'在庫増減数（t-0~t-{timelag}）']
             y = data[f'在庫増減数（t）']
+            st.header("✅下の在庫変動数を分析します")
+            def apply_decrement_to_zeros(df, column_name, decrement_value):
+                """
+                データフレームの指定列内で0の値に対して減算処理を適用する関数。
+                負の値以外が出現した場合には減算連鎖をリセットする。
+
+                Args:
+                    df (pd.DataFrame): 入力データフレーム。
+                    column_name (str): 変換対象の列名。
+                    decrement_value (float): 減算する値。
+
+                Returns:
+                    pd.DataFrame: 変換処理後のデータフレーム。
+                """
+
+                # 対象列をリスト化
+                values = df[column_name].tolist()
+                transformed = []  # 結果を格納するリスト
+                
+                for i, val in enumerate(values):
+                    if val == 0 and i > 0 and values[i - 1] == 0:  # 自分と前の値が0なら減算
+                        transformed.append(transformed[i - 1] - decrement_value)
+                    elif val == 0:  # 自分が0だが前の値が0でない場合
+                        transformed.append(0)
+                    else:
+                        # 0以外の値はそのまま追加
+                        transformed.append(val)
+
+                # 処理結果をデータフレームに反映
+                df[column_name] = transformed
+                return df
+            
+            st.dataframe(y)
+            #! 関数を適用
+            y_transformed_df = apply_decrement_to_zeros(data, '在庫増減数（t）', 0.1*(median_value_out/median_interval_out))#todo
+            st.dataframe(y_transformed_df[f'在庫増減数（t）'])
+            y = y_transformed_df[f'在庫増減数（t）']
             # todo-----------------------------------------------------------------------------------------------------------------
 
             # DataFrame に変換（列名を指定する）
@@ -1087,10 +1134,10 @@ def step2(data, rf_model, X, start_index, end_index, step3_flag, highlight_time=
     #print(strat_datetime,end_datetime)
 
     #!実行結果の確認：全体SHAPプロットの生成
-    # fig, ax = plt.subplots()
-    # shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
-    # #プロットをStreamlitで表示
-    # st.pyplot(fig)
+    fig, ax = plt.subplots()
+    shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
+    #プロットをStreamlitで表示
+    st.pyplot(fig)
     
     #! STEP3の要因分析結果の可視化のために、開始日時（strat_datetime）と終了日時（end_datetime）、
     #! SHAP値（bar_df）、元データ値（df2）を出力する
