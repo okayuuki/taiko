@@ -716,33 +716,77 @@ def show_analysis(product):
 
 
             #todo-------------------------------------------------------------------------------------------------------------
-            def sliding_window_sum_with_diff(df, time_col, target_col, window_size=10):
-                result = []
-                for i in range(len(df) - window_size + 1):  # スライディングウィンドウ
-                    window = df.iloc[i:i+window_size]
-                    window_sum = window.sum(numeric_only=True)  # 数値列の和を計算
-                    window_sum[time_col] = window[time_col].iloc[-1]  # 最後の行の日時を取得
-                    
-                    # 10行前との差分を計算
-                    if i >= window_size:
-                        window_sum[target_col] = df['在庫数（箱）'].iloc[i+window_size-1] - df['在庫数（箱）'].iloc[i-1]
-                    else:
-                        window_sum[target_col] = None  # 初期状態はNaN
-
-                    # 除外する列はそのまま1つ目のデータを残す
-                    for col in ['在庫数（箱）']:
-                        window_sum[col] = window[col].iloc[-1]
-                    
-                    result.append(window_sum)
-                return pd.DataFrame(result)
+            #一定の時間幅を設ける作戦
             
-            # 関数を適用して10行ごとの合計値を計算
-            data = sliding_window_sum_with_diff(data, time_col='日時', target_col='在庫増減数（t）', window_size=50)
+            # def sliding_window_sum_with_diff(df, time_col, target_col, window_size=10):
+            #     result = []
+            #     for i in range(len(df) - window_size + 1):  # スライディングウィンドウ
+            #         window = df.iloc[i:i+window_size]
+            #         window_sum = window.sum(numeric_only=True)  # 数値列の和を計算
+            #         window_sum[time_col] = window[time_col].iloc[-1]  # 最後の行の日時を取得
+                    
+            #         # 10行前との差分を計算
+            #         if i >= window_size:
+            #             window_sum[target_col] = df['在庫数（箱）'].iloc[i+window_size-1] - df['在庫数（箱）'].iloc[i-1]
+            #         else:
+            #             window_sum[target_col] = None  # 初期状態はNaN
 
-            st.header("✅スライディングウィンドウ")
-            data = data.iloc[300:]
-            st.dataframe(data)
+            #         # 除外する列はそのまま1つ目のデータを残す
+            #         for col in ['在庫数（箱）']:
+            #             window_sum[col] = window[col].iloc[-1]
+                    
+            #         result.append(window_sum)
+            #     return pd.DataFrame(result)
+            
+            # # 関数を適用して10行ごとの合計値を計算
+            # data = sliding_window_sum_with_diff(data, time_col='日時', target_col='在庫増減数（t）', window_size=50)
+
+            # st.header("✅スライディングウィンドウ")
+            # data = data.iloc[300:]
+            # st.dataframe(data)
             #todo-------------------------------------------------------------------------------------------------------------
+
+            def adjust_consecutive_values(series):
+                """
+                連続する値を、比率を基に増加配列に変換し、
+                修正後の連続値の合計が元の連続値そのものに一致するように調整。
+                """
+                data = series.values
+                n = len(data)
+                i = 0
+
+                while i < n:
+                    if data[i] != 0:
+                        start = i
+                        value = data[i]  # 連続する値
+                        # 連続する値の範囲を特定
+                        while i < n and data[i] == value:
+                            i += 1
+                        end = i  # 非包含
+
+                        # 比率を基に整数の増加配列を生成
+                        length = end - start
+                        weights = range(1, length + 1)  # 比率の配列 [1, 2, ..., length]
+                        weight_sum = sum(weights)
+                        adjusted_seq = [int(round(value * (w / weight_sum))) for w in weights]
+
+                        # 整数の合計が調整後の連続値に一致しない場合、誤差調整
+                        difference = value - sum(adjusted_seq)
+                        if difference > 0:  # 誤差を最後の値に加える
+                            adjusted_seq[-1] += difference
+                        elif difference < 0:  # 誤差を最後の値から引く
+                            adjusted_seq[-1] -= abs(difference)
+
+                        data[start:end] = adjusted_seq
+                    else:
+                        i += 1
+                return pd.Series(data)
+
+            # 修正処理を適用して新しい列を作成
+            # data['No8_変更後'] = data[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）']
+            # data[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'] = adjust_consecutive_values(data['No8_変更後'])
+            # st.header("✅特徴量化")
+            # st.dataframe(data)
 
             #todo-------------------------------------------------------------------------------------------------------------
 
@@ -807,7 +851,27 @@ def show_analysis(product):
             #st.dataframe(y_transformed_df[f'在庫増減数（t）'])
             #y = y_transformed_df[f'在庫増減数（t）']
 
-            y = y #+ data[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'] #- data[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）'].mean()
+            kARI = data
+
+            kARI["滞留"] = X[f'No8_部品置き場の入庫滞留状況（t-{delay_No8}~t-{delay_No8+timelag_No8}）']
+            kARI["異常入庫"] = X[f"No11_予定外の入庫かんばん数"]
+
+            # 0以外のデータで中央値を計算
+            median_value = kARI[kARI["滞留"] != 0]["滞留"].median()
+
+            kARI["滞留"] = kARI["滞留"].apply(lambda x: median_value if x > 0 else x)
+
+            A2_sum = kARI["滞留"].sum()
+
+            # Bの0でない行数を計算
+            B_size = (kARI["異常入庫"] != 0).sum().sum()
+
+            # Bが0でない列をすべてA_sum / B_sizeで置換
+            kARI["異常入庫"] = kARI["異常入庫"].apply(lambda x: A2_sum / B_size if x != 0 else x)
+
+            y = y - kARI["滞留"] + kARI["異常入庫"]
+
+            #y = y - A.apply(lambda x: median_value if x > 0 else x) + data[f"No11_予定外の入庫かんばん数"]
             #t.dataframe(y)
             #st.write(y.mean())
             #todo 増減数の平均＞＞0
