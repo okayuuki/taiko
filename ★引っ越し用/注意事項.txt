@@ -1,0 +1,15 @@
+main_v3.py
+functions_v3.py
+draw_wave.html
+・そのまま差し変え
+
+analysis_v3.py
+・日付変更
+    ・年月はMM表記で5月なら05で、開始日付＜終了日付になるようにする
+
+read_v3.py
+・import内容を変更する（コメントオフに）
+・DBフラグをオンに
+・メイン部分だけ差し替え推奨
+
+
