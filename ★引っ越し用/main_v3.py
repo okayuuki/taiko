@@ -138,7 +138,7 @@ def apply_custom_css():
 
 #-----------------------------------------------------------------------------------------------------------------------------------
 
-#! 予測ページ
+#! リミット計算ページ
 def forecast_page():
 
     # ページタイトル
@@ -326,6 +326,105 @@ def forecast_page():
         # STEP2が未達の時
         elif step2_flag_predict == 1:
             st.sidebar.warning("在庫数を入力してください")
+
+#! 在庫シミュレーション
+def zaiko_simulation_page():
+
+    #! ページタイトル
+    st.title("在庫予測シミュレーション（仮称）")
+    display_message("**この画面では、24時間先の在庫予測を行うことができます。実行する際は左側のサイドバーで各種設定を行ってください**","user")
+
+    #! カスタムCSSを適用して画面サイズを設定する
+    apply_custom_css()
+ 
+    #! サイドバートップメッセージ
+    st.sidebar.write("## 🔥各ステップを順番に実行してください🔥")
+    
+    #!-------------------------------------------------------------------------------
+    #! サイドバー設定
+    #!-------------------------------------------------------------------------------
+
+    # session_stateに初期値が入っていない場合は作成
+    if "start_datetime" not in st.session_state:
+        st.session_state.start_datetime = ""
+
+    if "start_date" not in st.session_state:
+        st.session_state.start_date = None  # 日付のデフォルト値を設定
+
+    if "change_rate" not in st.session_state:
+        st.session_state.change_rate = 0
+
+    # （テスト用）変数リセット
+    #st.session_state.start_datetime = ""
+    #st.session_state.change_rate = 0
+
+    st.sidebar.title("ステップ１：日時選択")
+    with st.sidebar.form(key='form_start_datetime'):
+
+        # 開始日
+        st.session_state.start_date = st.date_input("開始日", st.session_state.start_date)
+        
+        # 開始時間の選択肢をセレクトボックスで提供
+        hours = [f"{i:02d}:00" for i in range(24)]
+        start_time_str = st.selectbox("開始時間", hours, index=st.session_state.start_time.hour)
+        
+        # 選択された時間をdt_timeオブジェクトに変換
+        start_time_hours = int(start_time_str.split(":")[0])
+
+        # 時間を更新
+        st.session_state.start_time = dt_time(start_time_hours, 0)
+
+        # フォームの送信ボタン
+        submit_button_step1 = st.form_submit_button(label='登録する')
+    
+        # 開始日時と終了日時を結合
+        start_datetime = datetime.combine(st.session_state.start_date, st.session_state.start_time)
+    
+    # ボタンを押された時
+    if submit_button_step1:
+    
+        # フォームを送信したらsession_stateに保存
+        st.session_state.start_datetime = start_datetime
+
+        st.sidebar.success(f"新しく選択した日時：{st.session_state.start_datetime}")
+
+    # ボタンを押されなかったが、過去にボタンが押され変数に値が保存されているとき       
+    elif ("start_datetime" in st.session_state) and (st.session_state.start_datetime != ""):
+        st.sidebar.success(f"過去に選択した日時：{st.session_state.start_datetime}")
+    
+    # それ以外
+    else:
+        st.sidebar.warning("日時を入力し、「登録する」ボタンを押してください")
+
+    st.sidebar.title("ステップ２：変動率選択")
+    with st.sidebar.form(key='form_change_rate'):
+
+        # number_inputの引数で範囲や刻み幅を指定できます
+        selected_value = st.number_input(
+            "変動率を選択",
+            min_value=0.0,
+            max_value=2.0,
+            value=1.0,  # デフォルト値
+            step=0.1
+        )
+        
+        submit_button_step2 = st.form_submit_button("登録する")
+
+    # ボタンが押されたとき
+    if submit_button_step2:
+
+        st.session_state.change_rate = selected_value
+        st.sidebar.success(f"新しく選した変動率: {st.session_state.change_rate}")
+
+        forecast_v3.show_zaiko_simulation( st.session_state.start_datetime, st.session_state.change_rate)
+        
+    # ボタンを押されなかったが、過去にボタンが押され変数に値が保存されているとき
+    elif ("change_rate" in st.session_state) and (st.session_state.change_rate != 0):
+        st.sidebar.success(f"過去に選択した変動率{st.session_state.change_rate}")
+
+    # それ以外
+    else:
+        st.sidebar.warning("フレ率を入力し、「登録する」ボタンを押してください")
 
 #-----------------------------------------------------------------------------------------------------------------------------------
 #! 要因分析ページ            
@@ -688,7 +787,7 @@ def main():
         page = main_menu_analysis
     elif main_menu == "⏳ 予測（準備中）":
         # 予測のサブメニュー
-        main_menu_prediction = st.sidebar.radio("予測ページ選択", ["在庫リミット計算", "在庫予測"], key='prediction')
+        main_menu_prediction = st.sidebar.radio("予測ページ選択", ["在庫リミット計算", "在庫予測","在庫シミュレーション（仮名）"], key='prediction')
         page = main_menu_prediction
     elif main_menu == "📖 マニュアル":
         page = "📖 マニュアル"
@@ -823,12 +922,20 @@ def main():
         # st.write("\n\n")
         # st.subheader("**🆕 更新履歴**")
         # st.dataframe(df)
+
+        # 折り畳み可能なメッセージ
+        with st.sidebar.expander("詳細を見る（将来用）"):
+            st.write("ここに詳細情報を記載します。クリックすると折り畳み/展開が切り替わります。")
+            #st.image("https://via.placeholder.com/150", caption="例画像")
     
     elif page == "在庫リミット計算":
         forecast_page()
 
     elif page == "在庫予測":
         st.write("開発中")
+    
+    elif page == "在庫シミュレーション（仮名）":
+        zaiko_simulation_page()
 
     elif page == "要因分析":
         analysis_page()

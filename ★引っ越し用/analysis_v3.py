@@ -418,7 +418,7 @@ def show_analysis(product):
 
     #! 全品番の傾向確認（リアルタイム分析可能な品番確認）
     # 品番ごとの発注検収LTの中央値を計算
-    Timestamp_df['仕入先工場名'] = Timestamp_df['仕入先工場名'].apply(lambda x: '<NULL>' if pd.isna(x) else x)
+    Timestamp_df['仕入先工場名'] = Timestamp_df['仕入先工場名'].apply(lambda x: '< NULL >' if pd.isna(x) else x)
     Timestamp_df['品番_受入場所'] = Timestamp_df['品番'].astype(str) + "_" + Timestamp_df['整備室コード'].astype(str)
     hatyukensyu_median_lt = Timestamp_df.groupby(['品番_受入場所','品名','収容数','仕入先名','仕入先工場名'])['発注検収LT'].median().reset_index()
     hatyukensyu_median_lt.columns = ['品番_受入場所','品名','収容数','仕入先名','仕入先工場名','発注検収LTの中央値']
@@ -588,7 +588,7 @@ def show_analysis(product):
 
         #! 仕入先便到着フラグ計算
         #! 一致する仕入れ先フラグが見つからない場合、エラーを出す
-        lagged_features, matched_arrival_times_df,nonyu_type = process_shiresakibin_flag(lagged_features, arrival_times_df)
+        lagged_features, matched_arrival_times_df, nonyu_type = process_shiresakibin_flag(lagged_features, arrival_times_df)
         # 実行結果の確認
         display_message(f"**早着定刻遅着の基準データを統合しました**")
         st.dataframe(lagged_features)
@@ -640,6 +640,8 @@ def show_analysis(product):
                 pd.DataFrame: 納入予定日時ごとの集計結果を格納したデータフレーム。
             """
             # 日付をdatetime形式に変換
+            start_date = datetime.strptime(start_date, '%Y-%m-%d-%H')
+            start_date = start_date.replace(hour=0, minute=0, second=0)
             start_date = pd.to_datetime(start_date)
             end_date = pd.to_datetime(end_date) + pd.Timedelta(days=1)
 
@@ -766,6 +768,9 @@ def show_analysis(product):
         product = part_number#product.split('_')[0]#品番のみ
         #! 同品番、同整備室のデータを抽出
         Activedata = Activedata[(Activedata['品番'] == product) & (Activedata['整備室'] == seibishitsu)]
+        # todo（ダブり消す、設計値違うなどでダブりがある）
+        Activedata = Activedata.drop_duplicates(subset=["日付"], keep="first")  # 最初の行を採用
+        # todo
         #! 1時間ごとに変換
         Activedata = Activedata.set_index('日付').resample('H').ffill().reset_index()
         filtered_Activedata = Activedata[Activedata['日付'].isin(lagged_features['日時'])].copy()
@@ -1094,7 +1099,7 @@ def show_analysis(product):
         if nonyu_type == '西尾東':
             nonyu_lt = 5
         else:
-            nonyu_lt = 0
+            nonyu_lt = 1
 
         #! lagged_featuresに変数追加
         #! Result：入庫かんばん数に合わせた「納入かんばん数_時間遅れ（t）」列の追加
@@ -1819,6 +1824,9 @@ def step2(data, rf_model, X, start_index, end_index, step3_flag, highlight_time=
     product = product.split('_')[0]#品番のみ
     #! 同品番、同整備室のデータを抽出
     Activedata = Activedata[(Activedata['品番'] == product) & (Activedata['整備室'] == seibishitsu)]
+    # todo（ダブり消す、設計値違うなどでダブりがある）
+    Activedata = Activedata.drop_duplicates(subset=["日付"], keep="first")  # 最初の行を採用
+    # todo
 
     #実行結果の確認
     #st.header(start_index)
@@ -2119,6 +2127,9 @@ def step3(bar_df, df2, selected_datetime, line_df):
     product = product.split('_')[0]#品番のみ
     #　同品番、同整備室のデータを抽出
     Activedata = Activedata[(Activedata['品番'] == product) & (Activedata['整備室'] == seibishitsu)]
+    # todo（ダブり消す、設計値違うなどでダブりがある）
+    Activedata = Activedata.drop_duplicates(subset=["日付"], keep="first")  # 最初の行を採用
+    # todo
     #　1時間単位に変換
     Activedata = Activedata.set_index('日付').resample('H').ffill().reset_index()
 
