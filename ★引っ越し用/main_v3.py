@@ -337,36 +337,46 @@ def zaiko_simulation_page():
     #! カスタムCSSを適用して画面サイズを設定する
     apply_custom_css()
  
-    #! サイドバートップメッセージ
-    st.sidebar.write("## 🔥各ステップを順番に実行してください🔥")
+    # #! サイドバートップメッセージ
+    # st.sidebar.write("## 操作バー")
     
     #!-------------------------------------------------------------------------------
     #! サイドバー設定
     #!-------------------------------------------------------------------------------
 
+    # # （テスト用）変数リセット
+    # if st.sidebar.button("初期値をリセット"):
+    #     st.session_state.clear()
+
     # session_stateに初期値が入っていない場合は作成
+    if "start_date" not in st.session_state:
+        st.session_state.start_date = datetime.today().date()  # 現在の日付をデフォルト値に設定
+
+    if "start_time" not in st.session_state:
+        current_time = datetime.now().time()
+        st.session_state.start_time = dt_time(current_time.hour, 0)  # 現在の時間（分は0にリセット）
+
     if "start_datetime" not in st.session_state:
         st.session_state.start_datetime = ""
-
-    if "start_date" not in st.session_state:
-        st.session_state.start_date = None  # 日付のデフォルト値を設定
 
     if "change_rate" not in st.session_state:
         st.session_state.change_rate = 0
 
-    # （テスト用）変数リセット
-    #st.session_state.start_datetime = ""
-    #st.session_state.change_rate = 0
+    # 折り畳み可能なメッセージ
 
-    st.sidebar.title("ステップ１：日時選択")
+    st.sidebar.title("シミュレーション設定")
     with st.sidebar.form(key='form_start_datetime'):
 
         # 開始日
-        st.session_state.start_date = st.date_input("開始日", st.session_state.start_date)
+        st.session_state.start_date = st.date_input("開始日",
+                                                     st.session_state.start_date,
+                                                     help="初期設定は現在日です")
         
         # 開始時間の選択肢をセレクトボックスで提供
         hours = [f"{i:02d}:00" for i in range(24)]
-        start_time_str = st.selectbox("開始時間", hours, index=st.session_state.start_time.hour)
+        start_time_str = st.selectbox("開始時間", hours,
+                                       index=st.session_state.start_time.hour,
+                                       help="初期設定は現在時間です")
         
         # 選択された時間をdt_timeオブジェクトに変換
         start_time_hours = int(start_time_str.split(":")[0])
@@ -385,46 +395,48 @@ def zaiko_simulation_page():
     
         # フォームを送信したらsession_stateに保存
         st.session_state.start_datetime = start_datetime
+        st.sidebar.success(f"選択した日時：{st.session_state.start_datetime}")
 
-        st.sidebar.success(f"新しく選択した日時：{st.session_state.start_datetime}")
+        forecast_v3.show_zaiko_simulation( st.session_state.start_datetime, st.session_state.change_rate)
+
 
     # ボタンを押されなかったが、過去にボタンが押され変数に値が保存されているとき       
     elif ("start_datetime" in st.session_state) and (st.session_state.start_datetime != ""):
-        st.sidebar.success(f"過去に選択した日時：{st.session_state.start_datetime}")
+        st.sidebar.success(f"選択した日時：{st.session_state.start_datetime}")
     
     # それ以外
     else:
-        st.sidebar.warning("日時を入力し、「登録する」ボタンを押してください")
+        st.sidebar.warning("開始時間を入力し、「登録する」ボタンを押してください")
 
-    st.sidebar.title("ステップ２：変動率選択")
-    with st.sidebar.form(key='form_change_rate'):
+    # st.sidebar.title("ステップ２：変動率選択")
+    # with st.sidebar.form(key='form_change_rate'):
 
-        # number_inputの引数で範囲や刻み幅を指定できます
-        selected_value = st.number_input(
-            "変動率を選択",
-            min_value=0.0,
-            max_value=2.0,
-            value=1.0,  # デフォルト値
-            step=0.1
-        )
+    #     # number_inputの引数で範囲や刻み幅を指定できます
+    #     selected_value = st.number_input(
+    #         "変動率を選択",
+    #         min_value=0.0,
+    #         max_value=2.0,
+    #         value=1.0,  # デフォルト値
+    #         step=0.1
+    #     )
         
-        submit_button_step2 = st.form_submit_button("登録する")
+    #     submit_button_step2 = st.form_submit_button("登録する")
 
-    # ボタンが押されたとき
-    if submit_button_step2:
+    # # ボタンが押されたとき
+    # if submit_button_step2:
 
-        st.session_state.change_rate = selected_value
-        st.sidebar.success(f"新しく選した変動率: {st.session_state.change_rate}")
+    #     st.session_state.change_rate = selected_value
+    #     st.sidebar.success(f"新しく選した変動率: {st.session_state.change_rate}")
 
-        forecast_v3.show_zaiko_simulation( st.session_state.start_datetime, st.session_state.change_rate)
+    #     forecast_v3.show_zaiko_simulation( st.session_state.start_datetime, st.session_state.change_rate)
         
-    # ボタンを押されなかったが、過去にボタンが押され変数に値が保存されているとき
-    elif ("change_rate" in st.session_state) and (st.session_state.change_rate != 0):
-        st.sidebar.success(f"過去に選択した変動率{st.session_state.change_rate}")
+    # # ボタンを押されなかったが、過去にボタンが押され変数に値が保存されているとき
+    # elif ("change_rate" in st.session_state) and (st.session_state.change_rate != 0):
+    #     st.sidebar.success(f"過去に選択した変動率{st.session_state.change_rate}")
 
-    # それ以外
-    else:
-        st.sidebar.warning("フレ率を入力し、「登録する」ボタンを押してください")
+    # # それ以外
+    # else:
+    #     st.sidebar.warning("フレ率を入力し、「登録する」ボタンを押してください")
 
 #-----------------------------------------------------------------------------------------------------------------------------------
 #! 要因分析ページ            

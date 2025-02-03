@@ -261,12 +261,14 @@ def show_zaiko_simulation( selected_datetime, change_rate):
 
     #! 日量箱数を時間単位にするために
     #todo 稼働時間などを考えるなら、16.5で割る必要があるかもだが、その場合はどの時間帯が稼働時間分かる必要がある
-    kado_time = 24
+    kado_time = 25
+    selected_datetime_end = selected_datetime + timedelta(hours=kado_time-1)
 
     #! 選択情報表示
     col1, col2 = st.columns(2)
-    col1.metric(label="選択日時", value=selected_datetime.strftime("%Y-%m-%d %H:%M"))
-    col2.metric(label="選択変動率", value=change_rate)
+    col1.metric(label="シミュレーション開始時間", value=selected_datetime.strftime("%Y-%m-%d %H:%M"))
+    col2.metric(label="シミュレーション終了時間", value=selected_datetime_end.strftime("%Y-%m-%d %H:%M"))
+    #col2.metric(label="選択変動率", value=change_rate)
 
     # 1時間ごとの時間列（24時間分）を作成
     time_series = pd.date_range(start=selected_datetime, periods=24, freq="H")
@@ -325,7 +327,7 @@ def show_zaiko_simulation( selected_datetime, change_rate):
     #st.dataframe(Activedata)
 
     # test用
-    #unique_hinbans = Activedata['品番_受入場所'].unique()[:20]\
+    unique_hinbans = Activedata['品番_受入場所'].unique()[:20]
     
     # 空のリストを作成
     hinban_list = []
@@ -608,7 +610,7 @@ def show_zaiko_simulation( selected_datetime, change_rate):
         unique_hinmei = filtered_Timestamp_df['品名'].unique()[0]
         data_list.append({"品番_整備室": unique_hinban, "品名": unique_hinmei,
                            "仕入先名": unique_shiresaki, "発送工場名": unique_shiresaki_kojo,
-                           "下限割れ":total_lower_limit,"上限越え":total_upper_exceed,"在庫0":total_stock_zero})
+                           "下限割れ":total_lower_limit,"上限越え":total_upper_exceed,"欠品":total_stock_zero})
 
     # ローカルの PNG ファイルを Base64 エンコードする関数
     def img_to_base64(file_path):
@@ -631,47 +633,94 @@ def show_zaiko_simulation( selected_datetime, change_rate):
 
     #st.dataframe(df)
 
-    # ---- HTMLを組み立てる ----
+    def style_ok_ng(value):
+        """OK/NG文字列を色付きバッジHTMLに変換"""
+        if value == "OK":
+            return """<span class="badge-ok">OK</span>"""
+        elif value == "NG":
+            return """<span class="badge-ng">NG</span>"""
+        else:
+            return str(value)
+
+    # 2) HTML 組み立て
     html_code = """
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <style>
-            table {
-                border-collapse: collapse;
-                width: 100%;
-                margin-bottom: 1em;
-            }
-            th, td {
-                border: 1px solid #ccc;
-                padding: 8px;
-                text-align: center;
-            }
-            th {
-                background-color: #f7f7f7;
-            }
-            /* 折りたたまれている要素を非表示 */
-            .hidden-content {
-                display: none;
-            }
-            .toggle-button {
-                padding: 6px 12px;
-                background-color: #008CBA;
-                color: white;
-                border: none;
-                cursor: pointer;
-                border-radius: 4px;
-            }
-            .toggle-button:hover {
-                background-color: #006F9A;
-            }
-        </style>
-    </head>
-    <body>
+        <title>DataTables Column Filter + OK/NG Badges</title>
 
-    <script>
-        // ボタン押下時に表示・非表示を切り替える関数
+        <!-- ▼ DataTables用CSS (CDN) ▼ -->
+        <link rel="stylesheet" type="text/css"
+            href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.css"/>
+
+        <!-- ▼ jQuery / DataTables JS (CDN) ▼ -->
+        <script type="text/javascript"
+                src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
+        <script type="text/javascript"
+                src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.js"></script>
+
+        <style>
+        /* テーブル基本スタイル */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }
+
+        /* OK/NGバッジ */
+        .badge-ok {
+            display: inline-block;
+            padding: 5px 10px;
+            color: #fff;
+            background-color: #00aaff; /* 青 */
+            border-radius: 5px;
+        }
+        .badge-ng {
+            display: inline-block;
+            padding: 5px 10px;
+            color: #fff;
+            background-color: #ff4444; /* 赤 */
+            border-radius: 5px;
+        }
+
+        /* トグルボタン（グラフ表示）のCSS */
+        .toggle-button {
+            padding: 6px 12px;
+            background-color: #008CBA;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .toggle-button:hover {
+            background-color: #006F9A;
+        }
+        /* トグル表示部分(画像)は初期非表示 */
+        .hidden-content {
+            display: none;
+            margin-top: 8px;
+        }
+
+        /* フィルタ用のエリア (セレクトボックス) */
+        .filter-boxes {
+            margin-bottom: 1em;
+        }
+        .filter-boxes label {
+            margin-right: 8px;
+        }
+        .filter-select {
+            margin-right: 20px;
+        }
+        </style>
+
+        <script>
+        // 画像トグル
         function toggleImage(id) {
             var elem = document.getElementById(id);
             if (elem.style.display === 'none' || elem.style.display === '') {
@@ -680,68 +729,136 @@ def show_zaiko_simulation( selected_datetime, change_rate):
                 elem.style.display = 'none';
             }
         }
-    </script>
 
-    <table>
-        <thead>
-            <tr>
-                <th>品番_整備室</th>
-                <th>品名</th>
-                <th>仕入先名</th>
-                <th>仕入先工場名</th>
-                <th>下限割れ</th>
-                <th>在庫0</th>
-                <th>上限越え</th>
-                <th>グラフ</th>
-            </tr>
-        </thead>
-        <tbody>
+        var table;  // DataTablesインスタンス
+
+        // ページ読み込み時
+        $(document).ready(function() {
+            // DataTables化
+            table = $('#myTable').DataTable({
+                paging: true,
+                searching: true,  // 全体検索ON
+                ordering: true,
+                pageLength: 20,
+                lengthMenu: [20, 30, 40]
+            });
+
+            // 初期フィルタを適用 (欠品=NG, 下限割れ=NG, 上限越え=すべて)
+            doFilter();
+
+            // セレクトボックスが変更されたら doFilter() 実行
+            $('#filter_kekin').on('change', doFilter);
+            $('#filter_kagen').on('change', doFilter);
+            $('#filter_jougen').on('change', doFilter);
+        });
+
+        // 列ごとのフィルタ
+        function doFilter() {
+            // HTMLのselect要素から値を取得
+            var valKekin = $('#filter_kekin').val();  // 欠品
+            var valKagen = $('#filter_kagen').val();  // 下限割れ
+            var valJougen = $('#filter_jougen').val(); // 上限越え
+
+            // 欠品: 4列目, 下限割れ: 5列目, 上限越え: 6列目
+            // (0:品番, 1:品名, 2:仕入先, 3:工場, 4:欠品, 5:下限割れ, 6:上限越え, 7:グラフ)
+            table.column(4).search(valKekin).draw();
+            table.column(5).search(valKagen).draw();
+            table.column(6).search(valJougen).draw();
+        }
+        </script>
+    </head>
+
+    <body>
+        <!-- ▼ 列単位フィルタUI: 欠品, 下限割れ, 上限越え ▼ -->
+        <div class="filter-boxes">
+            <label>欠品:
+                <select id="filter_kekin" class="filter-select">
+                    <option value="">(すべて)</option>
+                    <option value="OK">OKのみ</option>
+                    <!-- NGを初期選択に -->
+                    <option value="NG" selected>NGのみ</option>
+                </select>
+            </label>
+
+            <label>下限割れ:
+                <select id="filter_kagen" class="filter-select">
+                    <option value="">(すべて)</option>
+                    <option value="OK">OKのみ</option>
+                    <!-- NGを初期選択に -->
+                    <option value="NG" selected>NGのみ</option>
+                </select>
+            </label>
+
+            <label>上限越え:
+                <select id="filter_jougen" class="filter-select">
+                    <!-- (すべて) を初期選択に -->
+                    <option value="" selected>(すべて)</option>
+                    <option value="OK">OKのみ</option>
+                    <option value="NG">NGのみ</option>
+                </select>
+            </label>
+        </div>
+
+        <!-- ▼ DataTablesを適用するテーブル本体 (#myTable) ▼ -->
+        <table id="myTable" class="display">
+            <thead>
+                <tr>
+                    <th>品番_整備室</th>
+                    <th>品名</th>
+                    <th>仕入先名</th>
+                    <th>仕入先工場名</th>
+                    <th>欠品</th>
+                    <th>下限割れ</th>
+                    <th>上限越え</th>
+                    <th>グラフ</th>
+                </tr>
+            </thead>
+            <tbody>
     """
 
-    # DataFrameの各行をループしてテーブルHTML作成
+    # 3) 行ループしながらHTMLの<tr>生成
     for i, row in df.iterrows():
-
         name = row["品番_整備室"]
-        price = row["品名"]
-        stock = row["仕入先名"]
-        stock1 = row["発送工場名"]
-        stock2 = row["下限割れ"]
-        stock3 = row["在庫0"]
-        stock4 = row["上限越え"]
+        pname = row["品名"]
+        sname = row["仕入先名"]
+        sfactory = row["発送工場名"]
+
+        # OK/NG文字列をバッジHTMLに置き換え
+        shortage = style_ok_ng(row["欠品"])
+        under_limit = style_ok_ng(row["下限割れ"])
+        over_limit  = style_ok_ng(row["上限越え"])
+
         img_b64 = row["画像base64"]
-        
-        # PNGの場合 => data:image/png;base64, ...
         data_url = f"data:image/png;base64,{img_b64}"
-        
-        html_code += f"""
+
+        row_html = f"""
         <tr>
-        <td>{name}</td>
-        <td>{price}</td>
-        <td>{stock}</td>
-        <td>{stock1}</td>
-        <td>{stock2}</td>
-        <td>{stock3}</td>
-        <td>{stock4}</td>
-        <td>
-            <!-- onclick で toggleImage() を呼び出し、ID指定で要素を表示/非表示 -->
-            <button class="toggle-button" onclick="toggleImage('hidden-content-{i}')">表示</button>
-            <!-- 最初は hidden-content クラスで非表示状態 -->
-            <div id="hidden-content-{i}" class="hidden-content">
-                <img src="{data_url}" style="max-width: 200px; margin-top: 8px;">
-            </div>
-        </td>
+            <td>{name}</td>
+            <td>{pname}</td>
+            <td>{sname}</td>
+            <td>{sfactory}</td>
+            <td>{shortage}</td>
+            <td>{under_limit}</td>
+            <td>{over_limit}</td>
+            <td>
+                <button class="toggle-button" onclick="toggleImage('hidden-content-{i}')">表示</button>
+                <div id="hidden-content-{i}" class="hidden-content">
+                    <img src="{data_url}" style="max-width: 200px;">
+                </div>
+            </td>
         </tr>
         """
+        html_code += row_html
 
     html_code += """
-        </tbody>
-    </table>
+            </tbody>
+        </table>
     </body>
     </html>
     """
 
-    # Streamlit で HTML を描画 (高さやスクロールは必要に応じて変更)
-    components.html(html_code, height=600, scrolling=True)
+    # 4) Streamlit で表示
+    components.html(html_code, height=1000, scrolling=True)
 
 
 #! 在庫予測
