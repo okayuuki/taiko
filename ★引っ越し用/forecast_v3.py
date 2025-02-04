@@ -585,8 +585,9 @@ def show_zaiko_simulation( selected_datetime, change_rate):
         ax.plot(basedata_filtered["日時"], basedata_filtered["在庫数（箱）_予測値"], label="在庫数（箱）_予測値", marker="o")
         ax.fill_between(basedata_filtered["日時"], basedata_filtered["設計値MIN"], basedata_filtered["設計値MAX"], 
                         color="lightgray", alpha=0.5, label="設計値範囲 (MIN-MAX)")
-        ax.axhline(y=basedata_filtered["設計値MIN"].iloc[0], color="blue", linestyle="--", label="設計値MIN")
-        ax.axhline(y=basedata_filtered["設計値MAX"].iloc[0], color="red", linestyle="--", label="設計値MAX")
+        #これはいらないかも
+        #ax.axhline(y=basedata_filtered["設計値MIN"].iloc[0], color="blue", linestyle="--", label="設計値MIN")
+        #ax.axhline(y=basedata_filtered["設計値MAX"].iloc[0], color="red", linestyle="--", label="設計値MAX")
 
         # ---- グラフの装飾 ----
         ax.set_title("在庫数と設計値の比較", fontsize=14)
@@ -599,6 +600,27 @@ def show_zaiko_simulation( selected_datetime, change_rate):
         # 画面に表示
         #st.pyplot(fig)
 
+        # 日時列をdatetime型に変換
+        basedata_filtered['日時'] = pd.to_datetime(basedata_filtered['日時'])
+
+        # 一番古い時刻を基準時刻（現在時刻）とする
+        base_time = basedata_filtered['日時'].min()
+
+        # 基準時刻からの経過時間 (時間単位) を計算
+        basedata_filtered['経過時間(時間)'] = (basedata_filtered['日時'] - base_time).dt.total_seconds() / 3600
+
+        # 設計値MINを割る最初の時間
+        time_min = basedata_filtered.loc[basedata_filtered['在庫数（箱）_予測値'] < basedata_filtered['設計値MIN'], '経過時間(時間)'].min()
+
+        # 設計値MAXを割る最初の時間
+        time_max = basedata_filtered.loc[basedata_filtered['在庫数（箱）_予測値'] > basedata_filtered['設計値MAX'], '経過時間(時間)'].min()
+
+        # 在庫が0より小さくなる最初の時間
+        time_zero = basedata_filtered.loc[basedata_filtered['在庫数（箱）_予測値'] < 0, '経過時間(時間)'].min()
+
+        # st.dataframe(basedata_filtered)
+        # st.write(time_min,time_max,time_zero)
+
         # ---- PNGファイルとして保存 ----
         save_dir = "temp/在庫シミュレーション"
         os.makedirs(save_dir, exist_ok=True)
@@ -610,7 +632,8 @@ def show_zaiko_simulation( selected_datetime, change_rate):
         unique_hinmei = filtered_Timestamp_df['品名'].unique()[0]
         data_list.append({"品番_整備室": unique_hinban, "品名": unique_hinmei,
                            "仕入先名": unique_shiresaki, "発送工場名": unique_shiresaki_kojo,
-                           "下限割れ":total_lower_limit,"上限越え":total_upper_exceed,"欠品":total_stock_zero})
+                           "下限割れ":total_lower_limit,"上限越え":total_upper_exceed,"欠品":total_stock_zero,
+                           "下限割れまでの時間":time_min,"上限越えまでの時間":time_max,"欠品までの時間":time_zero})
 
     # ローカルの PNG ファイルを Base64 エンコードする関数
     def img_to_base64(file_path):
@@ -642,26 +665,24 @@ def show_zaiko_simulation( selected_datetime, change_rate):
         else:
             return str(value)
 
-    # 2) HTML 組み立て
+    #HTML 組み立て
     html_code = """
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <title>DataTables Column Filter + OK/NG Badges</title>
+        <title>DataTables with Default Filters and Sorting</title>
 
         <!-- ▼ DataTables用CSS (CDN) ▼ -->
         <link rel="stylesheet" type="text/css"
             href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.css"/>
-
-        <!-- ▼ jQuery / DataTables JS (CDN) ▼ -->
         <script type="text/javascript"
                 src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
         <script type="text/javascript"
                 src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.js"></script>
 
         <style>
-        /* テーブル基本スタイル */
+        /* テーブルの基本スタイル */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -672,55 +693,104 @@ def show_zaiko_simulation( selected_datetime, change_rate):
             text-align: center;
         }
 
-        /* OK/NGバッジ */
+        /* OK/NGバッジのスタイル */
         .badge-ok {
             display: inline-block;
             padding: 5px 10px;
             color: #fff;
-            background-color: #00aaff; /* 青 */
+            background-color: #00aaff;
             border-radius: 5px;
         }
         .badge-ng {
             display: inline-block;
             padding: 5px 10px;
             color: #fff;
-            background-color: #ff4444; /* 赤 */
+            background-color: #ff4444;
             border-radius: 5px;
         }
 
-        /* トグルボタン（グラフ表示）のCSS */
+        /* トグルボタン */
         .toggle-button {
-            padding: 6px 12px;
+            padding: 8px 16px;
+            font-size: 16px;
             background-color: #008CBA;
             color: white;
             border: none;
+            border-radius: 6px;
             cursor: pointer;
-            border-radius: 4px;
-            font-size: 14px;
         }
         .toggle-button:hover {
             background-color: #006F9A;
         }
-        /* トグル表示部分(画像)は初期非表示 */
+
+        /* トグル表示部分（画像）は初期非表示 */
         .hidden-content {
             display: none;
             margin-top: 8px;
         }
 
-        /* フィルタ用のエリア (セレクトボックス) */
-        .filter-boxes {
-            margin-bottom: 1em;
-        }
-        .filter-boxes label {
-            margin-right: 8px;
-        }
+        /* ソートセレクトボックスのスタイル */
         .filter-select {
-            margin-right: 20px;
+            margin: 10px 0;
+            padding: 6px 12px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
         }
         </style>
 
         <script>
-        // 画像トグル
+        $(document).ready(function() {
+            // DataTables の初期化
+            var table = $('#myTable').DataTable({
+                paging: true,
+                searching: true,
+                ordering: true,
+                pageLength: 10,
+                lengthMenu: [10, 20, 30],
+                order: [[5, 'asc']],  // デフォルトで「欠品までの時間」を降順にソート
+                columnDefs: [
+                    {
+                        targets: [7, 9, 5], // 数値列（下限割れ、上限越え、欠品までの時間）
+                        render: function(data, type, row) {
+                            if (type === 'sort' || type === 'type') {
+                                // NaN を -Infinity に変換してソート可能に
+                                return data === null || data === '' ? Infinity : parseFloat(data);
+                            }
+                            return data; // 表示時はそのまま
+                        }
+                    }
+                ]
+            });
+
+            // デフォルトフィルタ適用
+            table.column(4).search('NG').draw();  // 欠品列を NG でフィルタ
+            table.column(6).search('NG').draw();  // 下限割れ列を NG でフィルタ
+            table.column(8).search('').draw();   // 上限越え列はフィルタなし（すべて）
+
+            // 列単位フィルタの処理
+            function doFilter() {
+                var valKekin = $('#filter_kekin').val();
+                var valKagen = $('#filter_kagen').val();
+                var valJougen = $('#filter_jougen').val();
+                table.column(4).search(valKekin).draw();
+                table.column(6).search(valKagen).draw();
+                table.column(8).search(valJougen).draw();
+            }
+
+            // フィルタが変更されたら doFilter を実行
+            $('#filter_kekin').on('change', doFilter);
+            $('#filter_kagen').on('change', doFilter);
+            $('#filter_jougen').on('change', doFilter);
+
+            // ソート条件の変更イベント
+            $('#sort-order').on('change', function() {
+                var columnIndex = $(this).val();  // セレクトボックスの値を取得
+                table.order([columnIndex, 'asc']).draw();  // 指定列で降順ソート
+            });
+        });
+
+        // トグル機能の実装
         function toggleImage(id) {
             var elem = document.getElementById(id);
             if (elem.style.display === 'none' || elem.style.display === '') {
@@ -729,45 +799,8 @@ def show_zaiko_simulation( selected_datetime, change_rate):
                 elem.style.display = 'none';
             }
         }
-
-        var table;  // DataTablesインスタンス
-
-        // ページ読み込み時
-        $(document).ready(function() {
-            // DataTables化
-            table = $('#myTable').DataTable({
-                paging: true,
-                searching: true,  // 全体検索ON
-                ordering: true,
-                pageLength: 20,
-                lengthMenu: [20, 30, 40]
-            });
-
-            // 初期フィルタを適用 (欠品=NG, 下限割れ=NG, 上限越え=すべて)
-            doFilter();
-
-            // セレクトボックスが変更されたら doFilter() 実行
-            $('#filter_kekin').on('change', doFilter);
-            $('#filter_kagen').on('change', doFilter);
-            $('#filter_jougen').on('change', doFilter);
-        });
-
-        // 列ごとのフィルタ
-        function doFilter() {
-            // HTMLのselect要素から値を取得
-            var valKekin = $('#filter_kekin').val();  // 欠品
-            var valKagen = $('#filter_kagen').val();  // 下限割れ
-            var valJougen = $('#filter_jougen').val(); // 上限越え
-
-            // 欠品: 4列目, 下限割れ: 5列目, 上限越え: 6列目
-            // (0:品番, 1:品名, 2:仕入先, 3:工場, 4:欠品, 5:下限割れ, 6:上限越え, 7:グラフ)
-            table.column(4).search(valKekin).draw();
-            table.column(5).search(valKagen).draw();
-            table.column(6).search(valJougen).draw();
-        }
         </script>
     </head>
-
     <body>
         <!-- ▼ 列単位フィルタUI: 欠品, 下限割れ, 上限越え ▼ -->
         <div class="filter-boxes">
@@ -775,7 +808,6 @@ def show_zaiko_simulation( selected_datetime, change_rate):
                 <select id="filter_kekin" class="filter-select">
                     <option value="">(すべて)</option>
                     <option value="OK">OKのみ</option>
-                    <!-- NGを初期選択に -->
                     <option value="NG" selected>NGのみ</option>
                 </select>
             </label>
@@ -784,14 +816,12 @@ def show_zaiko_simulation( selected_datetime, change_rate):
                 <select id="filter_kagen" class="filter-select">
                     <option value="">(すべて)</option>
                     <option value="OK">OKのみ</option>
-                    <!-- NGを初期選択に -->
                     <option value="NG" selected>NGのみ</option>
                 </select>
             </label>
 
             <label>上限越え:
                 <select id="filter_jougen" class="filter-select">
-                    <!-- (すべて) を初期選択に -->
                     <option value="" selected>(すべて)</option>
                     <option value="OK">OKのみ</option>
                     <option value="NG">NGのみ</option>
@@ -799,7 +829,17 @@ def show_zaiko_simulation( selected_datetime, change_rate):
             </label>
         </div>
 
-        <!-- ▼ DataTablesを適用するテーブル本体 (#myTable) ▼ -->
+        <!-- ▼ ソート用セレクトボックスを追加 -->
+        <div>
+            <label for="sort-order">並び替え条件:</label>
+            <select id="sort-order" class="filter-select">
+                <option value="6">下限割れまでの時間（大きい順）</option>
+                <option value="8">上限越えまでの時間（大きい順）</option>
+                <option value="4" selected>欠品までの時間（大きい順）</option>
+            </select>
+        </div>
+
+        <!-- ▼ DataTables 対応テーブル -->
         <table id="myTable" class="display">
             <thead>
                 <tr>
@@ -808,47 +848,60 @@ def show_zaiko_simulation( selected_datetime, change_rate):
                     <th>仕入先名</th>
                     <th>仕入先工場名</th>
                     <th>欠品</th>
+                    <th>欠品までの時間</th>
                     <th>下限割れ</th>
+                    <th>下限割れまでの時間</th>
                     <th>上限越え</th>
+                    <th>上限越えまでの時間</th>
                     <th>グラフ</th>
                 </tr>
             </thead>
             <tbody>
     """
 
-    # 3) 行ループしながらHTMLの<tr>生成
+    # DataFrame の行をループして HTML に変換
+    # for i, row in df.iterrows():
+    #     html_code += f"""
+    #     <tr>
+    #         <td>{row['品番_整備室']}</td>
+    #         <td>{row['品名']}</td>
+    #         <td>{row['仕入先名']}</td>
+    #         <td>{row['発送工場名']}</td>
+    #         <td>{row['下限割れまでの時間']}</td>
+    #         <td>{row['上限越えまでの時間']}</td>
+    #         <td>{row['欠品までの時間']}</td>
+    #         <td>{style_ok_ng(row['欠品'])}</td>
+    #         <td>{style_ok_ng(row['下限割れ'])}</td>
+    #         <td>{style_ok_ng(row['上限越え'])}</td>
+    #         <td>
+    #             <button class="toggle-button" onclick="toggleImage('hidden-content-{i}')">表示</button>
+    #             <div id="hidden-content-{i}" class="hidden-content">
+    #                 <img src="data:image/png;base64,{row['画像base64']}" style="max-width: 200px;">
+    #             </div>
+    #         </td>
+    #     </tr>
+    #     """
     for i, row in df.iterrows():
-        name = row["品番_整備室"]
-        pname = row["品名"]
-        sname = row["仕入先名"]
-        sfactory = row["発送工場名"]
-
-        # OK/NG文字列をバッジHTMLに置き換え
-        shortage = style_ok_ng(row["欠品"])
-        under_limit = style_ok_ng(row["下限割れ"])
-        over_limit  = style_ok_ng(row["上限越え"])
-
-        img_b64 = row["画像base64"]
-        data_url = f"data:image/png;base64,{img_b64}"
-
-        row_html = f"""
+        html_code += f"""
         <tr>
-            <td>{name}</td>
-            <td>{pname}</td>
-            <td>{sname}</td>
-            <td>{sfactory}</td>
-            <td>{shortage}</td>
-            <td>{under_limit}</td>
-            <td>{over_limit}</td>
+            <td>{row['品番_整備室']}</td>
+            <td>{row['品名']}</td>
+            <td>{row['仕入先名']}</td>
+            <td>{row['発送工場名']}</td>
+            <td>{style_ok_ng(row['欠品'])}</td>
+            <td>{row['欠品までの時間']}</td>
+            <td>{style_ok_ng(row['下限割れ'])}</td>
+             <td>{row['下限割れまでの時間']}</td>
+            <td>{style_ok_ng(row['上限越え'])}</td>
+            <td>{row['上限越えまでの時間']}</td>
             <td>
                 <button class="toggle-button" onclick="toggleImage('hidden-content-{i}')">表示</button>
                 <div id="hidden-content-{i}" class="hidden-content">
-                    <img src="{data_url}" style="max-width: 200px;">
+                    <img src="data:image/png;base64,{row['画像base64']}" style="max-width: 200px;">
                 </div>
             </td>
         </tr>
         """
-        html_code += row_html
 
     html_code += """
             </tbody>
