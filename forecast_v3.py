@@ -83,7 +83,7 @@ def show_forecast( unique_product, start_datetime, selected_zaiko):
     Timestamp_df = read_syozailt_by_using_archive_data(start_date, end_date)
     # '更新日時'列に無効な日時データがある行を削除する
     data_cleaned = Timestamp_df.dropna(subset=['検収日時'])
-    st.dataframe(data_cleaned.head(50000))
+    #st.dataframe(data_cleaned.head(50000))
     # 特定の品番の商品データを抽出
     data_cleaned = data_cleaned[(data_cleaned['品番'] == product) & (data_cleaned['整備室コード'] == seibishitsu)]
     # 時間ごとにグループ化し、各時間でのかんばん数をカウントする
@@ -660,6 +660,8 @@ def show_zaiko_simulation( selected_datetime, change_rate):
     base64_images = [img_to_base64(p) for p in hinban_list]
     # DataFrame に変換
     df_B = pd.DataFrame(base64_images, columns=["画像base64"])
+
+    #edited_df = st.data_editor(df_A, num_rows="dynamic")
 
     # DataFrame を統合（横方向に結合）
     data = pd.concat([df_A, df_B], axis=1)
