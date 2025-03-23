@@ -23,7 +23,8 @@ import forecast_v3
 from functions_v3 import display_message
 
 #! 自作ライブラリのimport
-from read_v3 import read_data, process_Activedata, read_syozailt_by_using_archive_data, read_activedata_by_using_archive_data, read_zaiko_by_using_archive_data
+from read_v3 import read_data, process_Activedata, read_syozailt_by_using_archive_data, read_activedata_by_using_archive_data,\
+      read_zaiko_by_using_archive_data, calculate_supplier_truck_arrival_types2
 
 #! 要因分析用の各ステップの実行フラグを保存する関数
 def save_flag_analysis(step1_flag, step2_flag, step3_flag, filename='temp/flag_analysis.pkl'):
@@ -144,7 +145,7 @@ def forecast_page():
 
     # ページタイトル
     st.title("在庫リミット計算")
-    st.info("📌 **この画面では、数時間先の在庫を計算することができます。実行する際は左側のサイドバーで各種設定を行ってください。**")
+    display_message("**この画面では、数時間先の在庫を計算することができます。実行する際は左側のサイドバーで各種設定を行ってください。**","user")
 
     # 折り返し線を追加
     st.markdown("---")
@@ -152,8 +153,18 @@ def forecast_page():
     # カスタムCSSを適用して画面サイズを設定する
     apply_custom_css()
 
-    # 分析用の各ステップの実行フラグを読み込む
-    step1_flag_predict, step2_flag_predict, step3_flag_predict = load_flag_predict()
+    # session_stateに初期値が入っていない場合は作成
+    if "product_limit" not in st.session_state:
+        st.session_state.product_limit = None
+
+    # session_stateに初期値が入っていない場合は作成
+    now = datetime.now()
+    if "start_date_limit_count" not in st.session_state:
+        st.session_state.start_date_limit_count = 0 # datetime(now.year, now.month, now.day, now.hour, 0, 0, 0) #現在時間をデフォルト値
+
+    # session_stateに初期値が入っていない場合は作成
+    if "selected_zaiko_count" not in st.session_state:
+        st.session_state.selected_zaiko_count = 0  # デフォルト値に設定
  
     # サイドバートップメッセージ
     st.sidebar.write("## 🔥各ステップを順番に実行してください🔥")
@@ -169,7 +180,7 @@ def forecast_page():
         hinban_seibishitsu_df = create_hinban_info()
 
         # サイドバーに品番選択ボックスを作成
-        product = st.selectbox("品番を選択してください", hinban_seibishitsu_df['品番_整備室'])
+        unique_product = st.selectbox("品番を選択してください", hinban_seibishitsu_df['品番_整備室'])
         
         # 「適用」ボタンをフォーム内に追加
         submit_button_step1 = st.form_submit_button(label='登録する')
@@ -177,59 +188,39 @@ def forecast_page():
     #! 適用ボタンが押されたときの処理
     if submit_button_step1 == True:
 
-        st.sidebar.success(f"新たに選択された品番: {product}")
+        st.sidebar.success(f"新たに選択された品番: {unique_product}")
         
-        # モデルとデータを保存
-        save_model_and_data(None, None,None, None, None, product)
-        
-        #実行フラグを更新する
-        step1_flag_predict = 1
-        step2_flag_predict = 0
-        step3_flag_predict = 0
-
-        # モデルとデータを保存
-        save_flag_predict(step1_flag_predict, step2_flag_predict, step3_flag_predict)
+        st.session_state.product_limit = unique_product
         
         #!　品番情報を表示
-        display_hinban_info(product)
+        display_hinban_info(unique_product)
 
         # 折り返し線を追加
         st.markdown("---")
 
+    elif ("product_limit" in st.session_state) and (st.session_state.product_limit != None):
+        st.sidebar.success(f"過去に選択した品番: {unique_product}")
+
+        #!　品番情報を表示
+        display_hinban_info(unique_product)
+
+        # 折り返し線を追加
+        st.markdown("---")
 
     #! 適用ボタンが押されなかったときの処理
     else:
-        
-        #! まだ一度もSTEP1が実行されていない時
-        if step1_flag_predict == 0:
-            st.sidebar.warning("品番を選択してください")
-
-        #! 1度はボタン押されている
-        elif step1_flag_predict == 1:
-            st.sidebar.success(f"過去に選択された品番: {product}")
-            
-            #! 品番情報表示
-            display_hinban_info(product)
-
-            # 折り返し線を追加
-            st.markdown("---")
+        st.sidebar.warning("品番を選択してください")
 
     
     #!-------------------------------------------------------------------------------
     #! 予測ページのステップ2のサイドバータイトル
     #!-------------------------------------------------------------------------------
     st.sidebar.title("ステップ２：日時選択")
-
-    # max_datetimeは現在の実行時刻
-    max_datetime = datetime.now()
-
-    # min_datetimeは1年前の日付
-    min_datetime = max_datetime - timedelta(days=365)
     
     default_values = {
-        'start_date': max_datetime.date(),
-        'start_time': datetime.strptime("00:00", "%H:%M").time(),  # 0:00として初期化
-        'end_time': datetime.strptime("23:00", "%H:%M").time(),  # 23:00として初期化
+        'start_date': datetime.now().date(),
+        'start_time': now.replace(minute=0, second=0, microsecond=0),
+        #'end_time': datetime.strptime("23:00", "%H:%M").time(),  # 23:00として初期化
         'button_clicked': False
     }
     
@@ -256,78 +247,151 @@ def forecast_page():
         # フォームの送信ボタン
         submit_button_step2 = st.form_submit_button(label='登録する')
     
-    # 開始日時と終了日時を結合
-    start_datetime = datetime.combine(st.session_state.start_date, st.session_state.start_time)
-    
+        # 開始日時と終了日時を結合
+        start_datetime = datetime.combine(st.session_state.start_date, st.session_state.start_time)
+        
     # ボタンを押された時
     if submit_button_step2:
 
-        if (step1_flag_predict == 1):
+        st.sidebar.success(f"開始日時: {start_datetime}")
 
-            st.sidebar.success(f"開始日時: {start_datetime}")
-            step2_flag_predict = 1
+        st.session_state.start_date_limit_count = 1
 
-            # モデルとデータを保存
-            save_flag_predict(step1_flag_predict, step2_flag_predict, step3_flag_predict)
-
-        else:
-            st.sidebar.error("順番にステップを実行ください")
-
+    elif ("start_date_limit_count" in st.session_state) and (st.session_state.start_date_limit_count != 0):
+        st.sidebar.success(f"過去に選択した開始日時: {start_datetime}")
+        
     # ボタンを押されなかった時       
     else:
+        st.sidebar.warning("開始日、開始時間を選択し、登録するボタンを押してください。")
 
-        if step2_flag_predict == 0:
-            st.sidebar.warning("開始日、開始時間を選択し、登録するボタンを押してください。")
-            min_datetime = min_datetime
-            #min_datetime = min_datetime.to_pydatetime()
-            
-        elif step2_flag_predict == 1:
-            st.sidebar.success(f"開始日時: {start_datetime}")
-            min_datetime = start_datetime
-            step2_flag_predict = 1
-
-            # モデルとデータを保存
-            save_flag_predict(step1_flag_predict, step2_flag_predict, step3_flag_predict)
-
+    
     #!-------------------------------------------------------------------------------
     #! 予測ページのステップ3のサイドバータイトル
     #!-------------------------------------------------------------------------------
     st.sidebar.title("ステップ３：在庫数入力")
 
+    LT = 5
+    if st.session_state.start_date_limit_count == 0:
+
+        zaiko_teian = 0
+
+    else:
+        
+        if unique_product:
+
+            product = unique_product.split('_')[0]
+            seibishitsu = unique_product.split('_')[1]
+
+            # todo 引数関係なく全データ読み込みしてる
+            zaiko_df = read_zaiko_by_using_archive_data(start_datetime.strftime('%Y-%m-%d-%H'), start_datetime.strftime('%Y-%m-%d-%H'))
+            # todo
+            #! 品番列を昇順にソート
+            zaiko_df = zaiko_df.sort_values(by='品番', ascending=True)
+            #! 無効な値を NaN に変換
+            zaiko_df['拠点所番地'] = pd.to_numeric(zaiko_df['拠点所番地'], errors='coerce')
+            #! 品番ごとに欠損値（NaN）を埋める(前方埋め後方埋め)
+            zaiko_df['拠点所番地'] = zaiko_df.groupby('品番')['拠点所番地'].transform(lambda x: x.fillna(method='ffill').fillna(method='bfill'))
+            #! それでも置換できないものはNaN を 0 で埋める
+            zaiko_df['拠点所番地'] = zaiko_df['拠点所番地'].fillna(0).astype(int).astype(str)
+            #! str型に変換
+            zaiko_df['拠点所番地'] = zaiko_df['拠点所番地'].astype(int).astype(str)
+            #! 受入場所情報準備
+            file_path = 'temp/マスター_品番&仕入先名&仕入先工場名.csv'
+            syozaikyotenchi_data = pd.read_csv(file_path, encoding='shift_jis')
+            #! 空白文字列や非数値データをNaNに変換
+            syozaikyotenchi_data['拠点所番地'] = pd.to_numeric(syozaikyotenchi_data['拠点所番地'], errors='coerce')
+            #! str型に変換
+            syozaikyotenchi_data['拠点所番地'] = syozaikyotenchi_data['拠点所番地'].fillna(0).astype(int).astype(str)
+            #! 受入場所追加
+            zaiko_df = pd.merge(zaiko_df, syozaikyotenchi_data[['品番','拠点所番地','受入場所','仕入先工場名']], on=['品番', '拠点所番地'], how='left')
+            #st.dataframe(zaiko_df.head(100))
+            #! 日付列を作成
+            zaiko_df['日付'] = zaiko_df['日時'].dt.date
+            #! 品番_受入番号作成
+            zaiko_df['品番_受入場所'] = zaiko_df['品番'].astype(str) + "_" + zaiko_df['受入場所'].astype(str)
+            zaiko_df = zaiko_df[(zaiko_df['品番'] == product) & (zaiko_df['受入場所'] == seibishitsu)]
+            zaiko_extracted = zaiko_df[['日時', '在庫数（箱）']]
+            # '日時' 列でデータをソート
+            zaiko_extracted = zaiko_extracted.sort_values(by=['日時'])
+            # 在庫数（箱）が NULL の場合、前の時間の在庫数（箱）で補完
+            #lagged_features['在庫数（箱）'] = lagged_features.groupby('品番')['在庫数（箱）'].transform(lambda x: x.fillna(method='ffill'))
+            zaiko_extracted = zaiko_extracted[zaiko_extracted['日時'] == start_datetime]
+            #st.write(zaiko_extracted['在庫数（箱）'].iloc[0])
+            if len(zaiko_extracted['在庫数（箱）']) != 0:
+                zaiko_teian = int(zaiko_extracted['在庫数（箱）'].iloc[0])
+            else:
+                zaiko_teian = 0
+            #st.write(zaiko_teian)
+
+            arrival_times_df = calculate_supplier_truck_arrival_types2()
+            arrival_times_df = arrival_times_df[
+                (arrival_times_df['仕入先名'].isin(zaiko_df['仕入先名'])) &
+                (arrival_times_df['発送場所名'].isin(zaiko_df['仕入先工場名']))
+            ]
+
+            #st.write(arrival_times_df)
+
+            LT = int(arrival_times_df["LT"].iloc[0])
+
+            #st.write(LT)
+
+        else:
+            zaiko_teian = 0
+
     # フォーム作成
     with st.sidebar.form("date_selector_form"):
         # 日時選択用セレクトボックス
-        selected_zaiko = st.selectbox("組立ラインの在庫数（箱）を入力してください",list(range(0,10)))
+        selected_zaiko = st.selectbox("工場内の在庫数（箱）を入力してください", list(range(0,100)), index = zaiko_teian,
+                                      help="現在在庫を参考にして、在庫数を選んでください。")
         submit_button_step3 = st.form_submit_button("登録する")
 
     # ボタンが押された時
     if submit_button_step3:
-        step3_flag_predict = 1
+        
+        st.sidebar.success(f"入力された在庫数: {selected_zaiko}")#、在庫数（箱）：{int(zaikosu)}")
 
-        if (step1_flag_predict == 1) and (step2_flag_predict == 1):
+        st.session_state.selected_zaiko_count = 1
 
-            st.sidebar.success(f"入力された在庫数: {selected_zaiko}")#、在庫数（箱）：{int(zaikosu)}")
-            #rf_model, X, data, product = load_model_and_data()
-            forecast_v3.show_forecast(product,start_datetime,selected_zaiko)
+    elif ("selected_zaiko_count" in st.session_state) and (st.session_state.selected_zaiko_count != 0):
+        st.sidebar.success(f"過去に選択した開始日時: {selected_zaiko}")
             
-            step3_flag_predict = 0
-            
-            # モデルとデータを保存
-            save_flag_predict(step1_flag_predict, step2_flag_predict, step3_flag_predict)
-
-        else:
-            st.sidebar.error("順番にステップを実行ください")
-
     # ボタンが押されなかった時
     else:
-        # STEP1が未達の時
-        if (step1_flag_predict == 0) or (step2_flag_predict == 0):
-            st.sidebar.warning("在庫数を入力してください")
-        
-        # STEP2が未達の時
-        elif step2_flag_predict == 1:
-            st.sidebar.warning("在庫数を入力してください")
+        st.sidebar.warning("在庫数を入力してください")
 
+    #!-------------------------------------------------------------------------------
+    #! 予測ページのステップ3のサイドバータイトル
+    #!-------------------------------------------------------------------------------
+    st.sidebar.title("ステップ４：需要調整")
+
+    # フォームの作成
+    with st.sidebar.form("zyuyo_form"):
+        st.write("日量をご選択ください")
+
+        # 2つのカラムを横並びに作成
+        col1, col2 = st.columns(2)
+
+        # 各カラムにボタンを配置
+        with col1:
+            btn1 = st.form_submit_button("日量を採用する",help="通常の日量を使用する")
+
+        with col2:
+            btn2 = st.form_submit_button("日量MAXを採用する",help="最大値の日量を使用する（生産数が多い場合で計算したい）")
+
+    # フォームの送信処理
+    if btn1:
+        st.sidebar.success("日量が採用されました")
+        forecast_v3.show_forecast(unique_product,start_datetime,selected_zaiko, LT, 0)
+
+    if btn2:
+        st.sidebar.success("日量MAXが採用されました")
+        forecast_v3.show_forecast(unique_product,start_datetime,selected_zaiko, LT, 1)
+
+    # 両方のボタンが押されていなかった場合のメッセージ
+    if not btn1 and not btn2:
+        st.sidebar.warning("日量をご選択ください") 
+
+    
 #! 在庫シミュレーション
 def zaiko_simulation_page():
 
@@ -351,7 +415,7 @@ def zaiko_simulation_page():
 
     # session_stateに初期値が入っていない場合は作成
     if "start_date" not in st.session_state:
-        st.session_state.start_date = datetime.today().date()  # 現在の日付をデフォルト値に設定
+        st.session_state.start_date = datetime.now()  # 現在の日付をデフォルト値に設定
 
     if "start_time" not in st.session_state:
         current_time = datetime.now().time()
@@ -997,12 +1061,12 @@ def main():
 
                 <div class="content-area">
                     <h1 class="title">在庫管理補助システム</h1>
-                    <p class="subtitle">お手伝いできることはありますか？</p>
+                    <p class="subtitle">主な機能について</p>
 
                     <div class="feature-list">
                         <div class="feature-item"><i class="fas fa-robot"></i><span>？</span></div>
                         <div class="feature-item"><i class="fas fa-chart-line"></i><span>予測</span></div>
-                        <div class="feature-item"><i class="fas fa-code"></i><span>実装例</span></div>
+                        <div class="feature-item"><i class="fas fa-code"></i><span>？</span></div>
                         <div class="feature-item"><i class="fas fa-brain"></i><span>分析</span></div>
                     </div>
                 </div>
@@ -1120,9 +1184,11 @@ def main():
         # st.subheader("**🆕 更新履歴**")
         # st.dataframe(df)
 
+        st.sidebar.header("管理メニュー")
+
         # 折り畳み可能なメッセージ
-        with st.sidebar.expander("詳細を見る（将来用）"):
-            st.write("ここに詳細情報を記載します。クリックすると折り畳み/展開が切り替わります。")
+        with st.sidebar.expander("💡 ヘルプ "):
+            st.write("ここに詳細情報を記載する。クリックすると折り畳み/展開が切り替わります。")
             #st.image("https://via.placeholder.com/150", caption="例画像")
 
         # 実行したい時刻をリストで設定（24時間表記）
@@ -1156,104 +1222,128 @@ def main():
 
         print(f"最初の実行予定時刻: {next_time}")
 
-        # while True:
-        #     now = datetime.now()
-            
-        #     if now >= next_time:
-        #         save_random_to_csv()
-                
-        #         # 次のスケジュール時刻を計算
-        #         next_time = next_run_time(now, schedule_times)
-        #         print(f"次の実行予定時刻: {next_time}")
-            
-        #     # 無駄な処理を減らすためにスリープ
-        #     time.sleep(10)
-
+        #st.write(st.session_state.processing)
         
         # 処理状態を保存するセッション変数
         if 'processing' not in st.session_state:
             st.session_state.processing = False
 
+        # st.write(st.session_state.processing)
+
+        #!!------------------------------------------------------------------------------------------------------------
+
+        #! オリジナル開始終了ボタン
+
         # cdnjs.cloudflare.comは読み込める、use.fontawesome.comだと読み込めない（古い & 非推奨 & 不安定らしい）
-        st.sidebar.markdown("""
-            <!-- Font Awesome 読み込み -->
-            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-            <style>
-                .description-text {
-                    font-size: 20px;       /* 👈 大きくした！ */
-                    margin-bottom: 15px;   /* ボタンとの余白をちょっと広げても◎ */
-                    color: #444;           /* 控えめなグレー */
-                    font-weight: bold;     /* 太字にして存在感を出しても◎ */
-                }
-                .button-container {
-                    display: flex;
-                    gap: 10px;          /* ボタン間の余白 */
-                    align-items: center;
-                    width: 100%;        /* 横幅いっぱいに広げる */
-                    flex-wrap: wrap;    /* 画面幅が狭い場合に折り返せるようにする */
-                }
-                /* 各フォームを等分し、横幅を可変に */
-                .button-container form {
-                    flex: 1;            /* 横幅を均等配分 */
-                    min-width: 120px;   /* 小さすぎないように最小幅を設定 */
-                }
-                .custom-button {
-                    width: 100%;        /* form 内で100%にして可変幅 */
-                    padding: 8px 16px;
-                    font-size: 20px;
-                    font-weight: bold;
-                    text-align: center;
-                    text-decoration: none;
-                    color: #333;            /* 文字色(地味め) */
-                    background-color: #ddd; /* ボタン背景色(地味め) */
-                    border: none;
-                    border-radius: 5px;
-                    box-shadow: 0 2px #999;
-                    transition: all 0.3s ease;
-                }
-                .custom-button:hover {
-                    background-color: #ccc; /* ホバー時の背景色 */
-                }
-                .custom-button:active {
-                    box-shadow: 0 1px #666;
-                    transform: translateY(1px);
-                }
-            </style>
-            <!-- 説明文 -->
-            <div class="description-text">
-                <i class="fa-regular fa-clock"></i>&nbsp;&nbsp;定期予測の設定
-            </div>
-            <div class="button-container">
-                <!-- 実行ボタン -->
-                <form action="" method="get">
-                    <button class="custom-button" type="submit" name="run_forecast" value="true">
-                        <i class="fa-solid fa-circle" style="color: #3EB489;"></i>&nbsp;&nbsp;起動
-                    </button>
-                </form>
-                <!-- 停止ボタン -->
-                <form action="" method="get">
-                    <button class="custom-button" type="submit" name="stop_forecast" value="true">
-                        <i class="fa-solid fa-circle-xmark" style="color: #FF6347;"></i>&nbsp;&nbsp;停止
-                    </button>
-                </form>
-            </div>
-        """, unsafe_allow_html=True)
+        # st.sidebar.markdown("""
+        #     <!-- Font Awesome 読み込み -->
+        #     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        #     <style>
+        #         .description-text {
+        #             font-size: 20px;       /* 👈 大きくした！ */
+        #             margin-bottom: 15px;   /* ボタンとの余白をちょっと広げても◎ */
+        #             color: #444;           /* 控えめなグレー */
+        #             font-weight: bold;     /* 太字にして存在感を出しても◎ */
+        #         }
+        #         .button-container {
+        #             display: flex;
+        #             gap: 10px;          /* ボタン間の余白 */
+        #             align-items: center;
+        #             width: 100%;        /* 横幅いっぱいに広げる */
+        #             flex-wrap: wrap;    /* 画面幅が狭い場合に折り返せるようにする */
+        #         }
+        #         /* 各フォームを等分し、横幅を可変に */
+        #         .button-container form {
+        #             flex: 1;            /* 横幅を均等配分 */
+        #             min-width: 120px;   /* 小さすぎないように最小幅を設定 */
+        #         }
+        #         .custom-button {
+        #             width: 100%;        /* form 内で100%にして可変幅 */
+        #             padding: 8px 16px;
+        #             font-size: 20px;
+        #             font-weight: bold;
+        #             text-align: center;
+        #             text-decoration: none;
+        #             color: #333;            /* 文字色(地味め) */
+        #             background-color: #ddd; /* ボタン背景色(地味め) */
+        #             border: none;
+        #             border-radius: 5px;
+        #             box-shadow: 0 2px #999;
+        #             transition: all 0.3s ease;
+        #         }
+        #         .custom-button:hover {
+        #             background-color: #ccc; /* ホバー時の背景色 */
+        #         }
+        #         .custom-button:active {
+        #             box-shadow: 0 1px #666;
+        #             transform: translateY(1px);
+        #         }
+        #     </style>
+        #     <!-- 説明文 -->
+        #     <div class="description-text">
+        #         <i class="fa-regular fa-clock"></i>&nbsp;&nbsp;定期予測の設定
+        #     </div>
+        #     <div class="button-container">
+        #         <!-- 実行ボタン -->
+        #         <form action="" method="get">
+        #             <button class="custom-button" type="submit" name="run_forecast" value="true">
+        #                 <i class="fa-solid fa-circle" style="color: #3EB489;"></i>&nbsp;&nbsp;起動
+        #             </button>
+        #         </form>
+        #         <!-- 停止ボタン -->
+        #         <form action="" method="get">
+        #             <button class="custom-button" type="submit" name="stop_forecast" value="true">
+        #                 <i class="fa-solid fa-circle-xmark" style="color: #FF6347;"></i>&nbsp;&nbsp;停止
+        #             </button>
+        #         </form>
+        #     </div>
+        # """, unsafe_allow_html=True)
 
         # クエリパラメータを取得（ボタン押下を検出）
-        query_params = st.query_params
+        # query_params_run_or_stop = st.query_params
+        # # 予測を開始するボタンを押したら
+        # if query_params_run_or_stop.get("run_forecast") == "true":
+        #     #st.sidebar.success("在庫予測を実行中... 🚀")
+        #     st.session_state.processing = True #
+        #     query_params_run_or_stop.clear() #　これをすることでボタンを押したことを忘れる（ページ移動して戻ってきても自動で再開しないようにする）
+        # # 予測を終了するボタンを押したら
+        # elif query_params_run_or_stop.get("stop_forecast") == "true":
+        #     #st.sidebar.info("予測は停止中 🛑")
+        #     st.session_state.processing = False
+
+        #!!------------------------------------------------------------------------------------------------------------
 
         # セッションステート初期化
-        if "run_forecast" not in st.session_state:
-            st.session_state.run_forecast = False
-
-        # サイドバーに状態を表示
-        if query_params.get("run_forecast") == "true":
-            #st.sidebar.success("在庫予測を実行中... 🚀")
-            st.session_state.processing = True
-            st.query_params.clear()
-        else:
-            #st.sidebar.info("予測は停止中 🛑")
+        if 'processing' not in st.session_state:
             st.session_state.processing = False
+
+        def start_processing():
+            st.session_state.processing = True
+
+        def stop_processing():
+            st.session_state.processing = False
+
+        with st.sidebar.form(key="control_form"):
+            st.subheader("定期予測の設定")
+
+            # ボタンを横に並べる
+            col1, col2 = st.columns(2)
+
+            with col1:
+                start_btn = st.form_submit_button("🟢　開始　")
+                if start_btn:
+                    start_processing()
+
+            with col2:
+                stop_btn = st.form_submit_button("🔴　停止　")
+                if stop_btn:
+                    stop_processing()
+
+            # 下にステータス表示
+            if st.session_state.processing:
+                st.info("定期予測を実行中です！停止する場合は「停止」を押してください。")
+            else:
+                st.warning("停止しています。開始するには「開始」を押してください。")
 
         # HTML/CSS/JavaScriptの定義
         html_template = """
@@ -1506,7 +1596,7 @@ def main():
             display_loader = "none"
             status_tag = "待機中"
             main_title = "在庫定期予測を停止中"
-            description = "「起動」ボタンをクリックして処理を開始してください。"
+            description = "「開始」ボタンをクリックして処理を開始してください。"
             formatted_datetime = "まだ開始されていません"
 
         # テンプレートに変数を挿入
@@ -1524,95 +1614,128 @@ def main():
         import os
 
         # 開きたいディレクトリのパス（例: CドライブのDocumentsフォルダ）
-        folder_path = 'Yosoku_test'
+        folder_path = '定期予測結果'
 
         # 処理状態を保存するセッション変数
-        if 'processing' not in st.session_state:
-            st.session_state.processing = False
+        # if 'processing' not in st.session_state:
+        #     st.session_state.processing = False
 
         # cdnjs.cloudflare.comは読み込める、use.fontawesome.comだと読み込めない（古い & 非推奨 & 不安定らしい）
-        st.sidebar.markdown("""
-            <!-- Font Awesome 読み込み -->
-            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-            <style>
-                .description-text {
-                    margin-top: 15px;
-                    font-size: 20px;       /* 👈 大きくした！ */
-                    margin-bottom: 15px;   /* ボタンとの余白をちょっと広げても◎ */
-                    color: #444;           /* 控えめなグレー */
-                    font-weight: bold;     /* 太字にして存在感を出しても◎ */
-                }
-                .button-container {
-                    display: flex;
-                    gap: 10px;          /* ボタン間の余白 */
-                    align-items: center;
-                    width: 100%;        /* 横幅いっぱいに広げる */
-                    flex-wrap: wrap;    /* 画面幅が狭い場合に折り返せるようにする */
-                }
-                /* 各フォームを等分し、横幅を可変に */
-                .button-container form {
-                    flex: 1;            /* 横幅を均等配分 */
-                    min-width: 120px;   /* 小さすぎないように最小幅を設定 */
-                }
-                .custom-button {
-                    width: 100%;        /* form 内で100%にして可変幅 */
-                    padding: 8px 16px;
-                    font-size: 20px;
-                    font-weight: bold;
-                    text-align: center;
-                    text-decoration: none;
-                    color: #333;            /* 文字色(地味め) */
-                    background-color: #ddd; /* ボタン背景色(地味め) */
-                    border: none;
-                    border-radius: 5px;
-                    box-shadow: 0 2px #999;
-                    transition: all 0.3s ease;
-                }
-                .custom-button:hover {
-                    background-color: #ccc; /* ホバー時の背景色 */
-                }
-                .custom-button:active {
-                    box-shadow: 0 1px #666;
-                    transform: translateY(1px);
-                }
-            </style>
-            <!-- 説明文 -->
-            <div class="description-text">
-                <i class="fa-regular fa-clock"></i>&nbsp;&nbsp;結果の確認
-            </div>
-            <div class="button-container">
-                <!-- 実行ボタン -->
-                <form action="" method="get">
-                    <button class="custom-button" type="submit" name="run_forecast2" value="true">
-                        <i class="fa-solid fa-circle" style="color: #3EB489;"></i>&nbsp;&nbsp;フォルダーを開く
-                    </button>
-            </div>
-        """, unsafe_allow_html=True)
+        # st.sidebar.markdown("""
+        #     <!-- Font Awesome 読み込み -->
+        #     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        #     <style>
+        #         .description-text {
+        #             margin-top: 15px;
+        #             font-size: 20px;       /* 👈 大きくした！ */
+        #             margin-bottom: 15px;   /* ボタンとの余白をちょっと広げても◎ */
+        #             color: #444;           /* 控えめなグレー */
+        #             font-weight: bold;     /* 太字にして存在感を出しても◎ */
+        #         }
+        #         .button-container {
+        #             display: flex;
+        #             gap: 10px;          /* ボタン間の余白 */
+        #             align-items: center;
+        #             width: 100%;        /* 横幅いっぱいに広げる */
+        #             flex-wrap: wrap;    /* 画面幅が狭い場合に折り返せるようにする */
+        #         }
+        #         /* 各フォームを等分し、横幅を可変に */
+        #         .button-container form {
+        #             flex: 1;            /* 横幅を均等配分 */
+        #             min-width: 120px;   /* 小さすぎないように最小幅を設定 */
+        #         }
+        #         .custom-button {
+        #             width: 100%;        /* form 内で100%にして可変幅 */
+        #             padding: 8px 16px;
+        #             font-size: 20px;
+        #             font-weight: bold;
+        #             text-align: center;
+        #             text-decoration: none;
+        #             color: #333;            /* 文字色(地味め) */
+        #             background-color: #ddd; /* ボタン背景色(地味め) */
+        #             border: none;
+        #             border-radius: 5px;
+        #             box-shadow: 0 2px #999;
+        #             transition: all 0.3s ease;
+        #         }
+        #         .custom-button:hover {
+        #             background-color: #ccc; /* ホバー時の背景色 */
+        #         }
+        #         .custom-button:active {
+        #             box-shadow: 0 1px #666;
+        #             transform: translateY(1px);
+        #         }
+        #     </style>
+        #     <!-- 説明文 -->
+        #     <div class="description-text">
+        #         <i class="fa-regular fa-clock"></i>&nbsp;&nbsp;結果の確認
+        #     </div>
+        #     <div class="button-container">
+        #         <!-- 実行ボタン -->
+        #         <form action="" method="get">
+        #             <button class="custom-button" type="submit" name="check_forecast_result" value="true">
+        #                 <i class="fa-solid fa-circle" style="color: #3EB489;"></i>&nbsp;&nbsp;フォルダーを開く
+        #             </button>
+        #     </div>
+        # """, unsafe_allow_html=True)
 
-        # クエリパラメータを取得（ボタン押下を検出）
-        query_params = st.query_params
+        # # クエリパラメータを取得（ボタン押下を検出）
+        # query_params = st.query_params
 
-        # セッションステート初期化
-        if "run_forecast2" not in st.session_state:
-            st.session_state.run_forecast = False
+        # # フォルダーを開くボタンを押した（予測の結果を確認する）場合
+        # if query_params.get("check_forecast_result") == "true":
+        #     os.startfile(folder_path)
+        #     st.query_params.clear()
+        # else:
+        #     print("1")
 
-        # サイドバーに状態を表示
-        if query_params.get("run_forecast2") == "true":
-            os.startfile(folder_path)
-        else:
-            print("1")
+        # セッションステートの初期化（必要なら）
+        if 'check_results' not in st.session_state:
+            st.session_state.check_results = False
+
+        # 関数（コールバック）
+        def check_results():
+            st.session_state.check_results = True
+
+        # サイドバー内にフォームを作成
+        with st.sidebar.form(key="results_form"):
+            st.subheader("予測結果の確認")
+
+            # フォーム内のボタン
+            check_button = st.form_submit_button("📂　フォルダーを開く　")
+
+            # ボタンが押されたら処理実行
+            if check_button:
+                check_results()
+
+            # フォーム外で処理を実行（セッションステートによる判定）
+            if st.session_state.check_results:
+                os.startfile(folder_path)  # フォルダーを開く
+
+            # 下にステータス表示
+            if st.session_state.check_results:
+                st.info("エクスプローラーでフォルダーを開いています。")
+            else:
+                st.warning("予測結果を確認する場合は、「フォルダーを開く」を押してください。")
+
 
         #無限ループ
         if st.session_state.processing:
             # === 実行したい時刻をリストで指定（24時間表記） ===
             # 例えば ["10:00", "11:00", "12:00"] とか
-            target_times = ["22:15", "22:30", "22:50"]
+            target_times = ["00:57", "01:06", "22:50"]
 
             # 実行済みフラグ（同じ時刻に複数回動かないようにする）
             executed_times = set()
 
             def job(run_time):
-                now = datetime.now()
+                #now = datetime.now()
+
+                current_time = datetime.now()
+                now = current_time.replace(minute=0, second=0, microsecond=0)
+
+                st.write(now)
+
                 print(f"{now.strftime('%Y-%m-%d %H:%M:%S')} に {run_time} を実行！")
 
                 # ここにやりたい処理を書く
@@ -1621,8 +1744,10 @@ def main():
                     'データ': [42]
                 })
 
+                df = forecast_v3.show_zaiko_simulation( now,1)
+
                 # ファイル名は実行時間ベースでOK
-                filename = f"yosoku_test/data_{now.strftime('%Y%m%d_%H%M')}.csv"
+                filename = f"定期予測結果/data_{now.strftime('%Y%m%d_%H%M')}.csv"
                 df.to_csv(filename, index=False)
                 print(f"{filename} を保存しました。\n")
 
