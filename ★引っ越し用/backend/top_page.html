@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Embedding Model Blog Thumbnail</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .thumbnail-container {
+            width: 99vw;
+            height: 99vh;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 15px 25px rgba(0,0,0,0.1);
+            position: relative;
+            display: flex;
+        }
+
+        .content-area {
+            flex: 3;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .visual-area {
+            flex: 3;
+            background-color: #005eff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .title {
+            font-size: 3vw;
+            font-weight: 800;
+            color: #005eff;
+            margin-bottom: 2vh;
+            line-height: 1.2;
+        }
+
+        .subtitle {
+            font-size: 1.5vw;
+            color: #000000;
+            margin-bottom: 3vh;
+            font-weight: 500;
+        }
+
+        .feature-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1vw;
+            margin-top: 1vh;
+        }
+
+        .feature-item {
+            background-color: rgba(0, 207, 255, 0.1);
+            color: #000000;
+            padding: 0.5vw 1vw;
+            border-radius: 50px;
+            font-size: 1vw;
+            display: flex;
+            align-items: center;
+            gap: 0.5vw;
+            border: 1px solid rgba(0, 207, 255, 0.3);
+        }
+
+        .feature-item i {
+            color: #00cfff;
+        }
+
+        .blog-tag {
+            position: absolute;
+            top: 1vh;
+            left: 1vw;
+            background-color: #0099ff;
+            color: #fff;
+            padding: 0.5vh 1vw;
+            border-radius: 4px;
+            font-size: 0.8vw;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .accent-line {
+            position: absolute;
+            height: 100%;
+            width: 0.5vw;
+            background: linear-gradient(to bottom, #00cfff, #0099ff, #005eff);
+            left: 0;
+            top: 0;
+        }
+
+        /* ここからはエフェクトやパーティクルの設定（省略せずにそのまま） */
+        .abstract-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .node, .connection, .particle, .wave {
+            position: absolute;
+        }
+
+        /* ノード、コネクション、パーティクル、波動のアニメーションは省略してない！ */
+        .node {
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            transform-origin: center;
+        }
+
+        /* ノードの位置やアニメーション（省略せずにフル） */
+        .node:nth-child(1) { width: 1vw; height: 1vw; top: 30%; left: 40%; animation: pulse 3s infinite alternate, float 8s infinite linear; }
+        .node:nth-child(2) { width: 1.5vw; height: 1.5vw; top: 60%; left: 60%; animation: pulse 4s infinite alternate-reverse, float 12s infinite linear reverse; }
+        .node:nth-child(3) { width: 1vw; height: 1vw; top: 20%; left: 70%; animation: pulse 5s infinite alternate, float 10s infinite linear; }
+        .node:nth-child(4) { width: 1.2vw; height: 1.2vw; top: 70%; left: 20%; animation: pulse 3.5s infinite alternate-reverse, float 11s infinite linear reverse; }
+        .node:nth-child(5) { width: 0.8vw; height: 0.8vw; top: 40%; left: 80%; animation: pulse 4.5s infinite alternate, float 9s infinite linear; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0.5vw rgba(255, 255, 255, 0.6); }
+            100% { transform: scale(1.5); box-shadow: 0 0 1vw rgba(255, 255, 255, 0.8); }
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0); }
+            25% { transform: translate(2vw, 1.5vw); }
+            50% { transform: translate(0.5vw, -1.5vw); }
+            75% { transform: translate(-2vw, 1vw); }
+            100% { transform: translate(0, 0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="thumbnail-container">
+        <div class="accent-line"></div>
+        <div class="blog-tag">Made with love in Kariya by DS部</div>
+
+        <div class="content-area">
+            <h1 class="title">在庫管理補助システム</h1>
+            <p class="subtitle">主な機能について</p>
+
+            <div class="feature-list">
+                <div class="feature-item"><i class="fas fa-robot"></i><span>？</span></div>
+                <div class="feature-item"><i class="fas fa-chart-line"></i><span>予測</span></div>
+                <div class="feature-item"><i class="fas fa-code"></i><span>？</span></div>
+                <div class="feature-item"><i class="fas fa-brain"></i><span>分析</span></div>
+            </div>
+        </div>
+
+        <div class="visual-area">
+            <div class="abstract-container">
+                <div class="node"></div>
+                <div class="node"></div>
+                <div class="node"></div>
+                <div class="node"></div>
+                <div class="node"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+
