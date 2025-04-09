@@ -283,92 +283,72 @@ def compute_features_and_target():
                                                               recent_chakkousuu_status_and_trend_column):
         
         """
-        稼働していた直近X時間分の着工数から、直近の生産状況（着工傾向）を
-        稼働フラグを重みとした加重平均で定量化する関数。
+        稼働していた直近X時間分のデータから、1分あたりの着工数を
+        「着工数 ÷（稼働フラグ × 60）」の平均として定量化する関数。
 
         処理の流れ：
         1. 各行について、その行までのデータを時系列で遡って取得する。
         2. その中から「稼働フラグ > 0」の行のみを抽出する。
         3. 抽出された稼働行の中から直近 window 件分を取得する。
-        4. 着工数に稼働フラグを重みとして加重平均を計算し、
-        結果を新しい列として現在の行に記録する。
+        4. 各行で「着工数 ÷（稼働フラグ × 60）」を計算し、その平均値を
+        現在の行の傾向値として記録する。
 
         Parameters:
             df (pd.DataFrame): 入力データフレーム。kado_column（稼働フラグ）と
                             chakkou_column（着工数）を含む必要がある。
             kado_column (str): 稼働フラグ列の名前（例：1 = 完全稼働、0.5 = 半稼働、0 = 非稼働）。
             chakkou_column (str): 着工数を示す列名。
-            window (int): 稼働時間ベースで何件分の履歴を使って傾向を算出するか。
+            window (int): 稼働行ベースで何件分の履歴を使って傾向を算出するか。
             recent_chakkousuu_status_and_trend_column (str): 結果を格納する新しい列名。
 
         Returns:
-            pd.DataFrame: 各行に着工傾向（加重平均）を示す新しい列を追加したDataFrame。
+            pd.DataFrame: 各行に「1分あたりの着工傾向」を示す新しい列を追加したDataFrame。
 
         Example:
             入力データ（window=3）の場合：
 
-                index | 時刻   | 稼働フラグ | 着工数 | 着工傾向
-                ------|--------|-----------|--------|----------
-                0     | 8:00   |   1.0     |   10   |   10.0
-                1     | 9:00   |   0.0     |    0   |   10.0
-                2     | 10:00  |   0.5     |    6   |    8.0
-                3     | 11:00  |   1.0     |    9   |    8.3
-                4     | 12:00  |   1.0     |    8   |    8.5
+                index | 時刻   | 稼働フラグ | 着工数 | 傾向値（1分あたり）
+                ------|--------|-----------|--------|---------------------
+                0     | 8:00   |   1.0     |   60   |   1.00
+                1     | 9:00   |   0.0     |    0   |   1.00
+                2     | 10:00  |   0.5     |   30   |   1.00
+                3     | 11:00  |   1.0     |   45   |   0.92
+                4     | 12:00  |   1.0     |   48   |   0.90
 
-            → 着工傾向列（加重平均）は、着工数 × 稼働フラグ の加重平均で算出される。
-            例：index=3 のとき、直近3件（1.0×10, 0.5×6, 1.0×9）の加重平均は：
-                (10×1 + 6×0.5 + 9×1) / (1 + 0.5 + 1) = 23 / 2.5 = 9.2
+            → 傾向値列は、各行で「着工数 ÷（稼働フラグ × 60）」を計算し、その平均で算出される。
+            例：index=3 のとき、直近3件は：
+                - 60 ÷ (1.0 × 60) = 1.00
+                - 30 ÷ (0.5 × 60) = 1.00
+                - 45 ÷ (1.0 × 60) = 0.75
+                → 平均 = (1.00 + 1.00 + 0.75) / 3 = 0.92
 
-            ※ 稼働フラグが0でも着工数が0以外の場合は無視される（加重0なので影響なし）。
+            ※ 稼働フラグが0の行は除外される（ゼロ除算防止のため）。
         """
 
-        # 平均バージョン
-        # df = df.copy()
-        # df[recent_chakkousuu_status_and_trend_column] = None
-
-        # for idx in df.index:
-
-        #     # 現在の行までの範囲を取得（過去）
-        #     df_up_to_now = df.loc[:idx]
-
-        #     # 稼働していた行のみを抽出
-        #     kado_rows = df_up_to_now[df_up_to_now[kado_column] != 0]
-
-        #     # 直近の稼働X件だけを取得
-        #     recent_kado = kado_rows.tail(window)
-
-        #     # chakkou_columnの平均を計算
-        #     mean_value = recent_kado[chakkou_column].mean()
-
-        #     # 新しい列に代入
-        #     df.at[idx, recent_chakkousuu_status_and_trend_column] = mean_value
-
-        # return df
-
-        # 稼働フラグとの加重平均バージョン
         df = df.copy()
         df[recent_chakkousuu_status_and_trend_column] = None
 
         for idx in df.index:
-
-            # 現在の行まで取得
+            # 現在の行までのデータを取得
             df_up_to_now = df.loc[:idx]
 
-            # 稼働行のみを抽出
-            kado_rows = df_up_to_now[df_up_to_now[kado_column] != 0]
+            # 稼働していた行のみを抽出（稼働フラグが0でない）
+            valid_rows = df_up_to_now[df_up_to_now[kado_column] != 0]
 
-            # 直近window件の稼働行を取得
-            recent_kado = kado_rows.tail(window)
+            # 直近window件を取得
+            recent_valid = valid_rows.tail(window)
 
-            if not recent_kado.empty:
-                # 加重平均を計算（稼働フラグ × 着工数） / 稼働フラグの合計
-                weights = recent_kado[kado_column]
-                values = recent_kado[chakkou_column]
-                weighted_mean = (weights * values).sum() / weights.sum()
+            if not recent_valid.empty:
+                # 各行で「着工数 ÷（稼働フラグ × 60）」を計算
+                per_minute_values = recent_valid[chakkou_column] / (recent_valid[kado_column] * 60)
+
+                # 平均値を傾向として記録
+                mean_value = per_minute_values.mean()
             else:
-                weighted_mean = 0
+                mean_value = 0
 
-            df.at[idx, recent_chakkousuu_status_and_trend_column] = weighted_mean
+            # 傾向値を新しい列に記録
+            df.at[idx, recent_chakkousuu_status_and_trend_column] = mean_value
 
         return df
 
