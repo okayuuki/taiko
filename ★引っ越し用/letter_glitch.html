@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Letter Glitch</title>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    background: #2C7BE5; /* 背景色を指定 */
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .vignette {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background: radial-gradient(circle, rgba(0,0,0,0) 100%, rgba(0,0,0,0.8) 100%);
+  }
+  .center-text {
+    position: absolute;
+    top: 50%;
+    left: 2%;          /* ← 左に寄せる。5%くらい余白をとる */
+    transform: translate(0, -50%); /* ← 左右のズレ補正を消して、上だけズラす */
+    font-size: 48px;
+    color: #fefefe; /* ← ここを黒系 (#222222) に変更 */
+    font-family: 'Arial', 'Helvetica', sans-serif;
+    font-weight: bold;
+    text-shadow: 4px 4px 4px rgba(0,0,0,0.8); /* ← 黒文字が際立つように白系ぼかしを残す */
+    z-index: 2;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="glitchCanvas"></canvas>
+
+<!-- FontAwesome読み込み（まだしてないなら必要！） -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+
+<!-- 中央に載せるテキスト -->
+<div class="center-text">
+  <i class="fas fa-cube"></i> 部品在庫分析システム
+</div>
+
+<div class="vignette"></div>
+
+<script>
+const canvas = document.getElementById('glitchCanvas');
+const ctx = canvas.getContext('2d');
+let letters = [];
+let grid = { columns: 0, rows: 0 };
+
+const fontSize = 16;
+const charWidth = 10;
+const charHeight = 20;
+const glitchSpeed = 50;
+const glitchColors = ['#ffffff', '#61dca3', '#61b3dc']; // 文字色：白ベース＋水色系
+
+const lettersAndSymbols = [
+  'A','B','C','D','E','F','G','H','I','J','K','L','M',
+  'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+  '!','@','#','$','&','*','(',')','-','_','+','=','/',
+  '[',']','{','}',';',':','<','>',',','0','1','2','3',
+  '4','5','6','7','8','9'
+];
+
+function getRandomChar() {
+  return lettersAndSymbols[Math.floor(Math.random() * lettersAndSymbols.length)];
+}
+
+function getRandomColor() {
+  return glitchColors[Math.floor(Math.random() * glitchColors.length)];
+}
+
+function calculateGrid(width, height) {
+  return {
+    columns: Math.ceil(width / charWidth),
+    rows: Math.ceil(height / charHeight)
+  };
+}
+
+function initializeLetters(columns, rows) {
+  grid = { columns, rows };
+  letters = Array.from({ length: columns * rows }, () => ({
+    char: getRandomChar(),
+    color: getRandomColor()
+  }));
+}
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { columns, rows } = calculateGrid(window.innerWidth, window.innerHeight);
+  initializeLetters(columns, rows);
+}
+
+function drawLetters() {
+  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  ctx.font = fontSize + 'px monospace';
+  ctx.textBaseline = 'top';
+  letters.forEach((letter, index) => {
+    const x = (index % grid.columns) * charWidth;
+    const y = Math.floor(index / grid.columns) * charHeight;
+    ctx.fillStyle = letter.color;
+    ctx.fillText(letter.char, x, y);
+  });
+}
+
+function updateLetters() {
+  const updateCount = Math.max(1, Math.floor(letters.length * 0.05));
+  for (let i = 0; i < updateCount; i++) {
+    const index = Math.floor(Math.random() * letters.length);
+    letters[index].char = getRandomChar();
+    letters[index].color = getRandomColor();
+  }
+}
+
+function animate() {
+  updateLetters();
+  drawLetters();
+  setTimeout(animate, glitchSpeed);
+}
+
+window.addEventListener('resize', resizeCanvas);
+
+resizeCanvas();
+animate();
+</script>
+</body>
+</html>
