@@ -10,35 +10,33 @@ import shap
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error 
+import lightgbm as lgb
+from lightgbm import LGBMRegressor
+import matplotlib.pyplot as plt
 
 # 自作ライブラリのimport
 from preprocess_data import compute_features_and_target
 
 #MARK: 機械学習のパイプライン
-def pipeline():
+def pipeline(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo):
 
     # 目的変数と説明変数を作成する
-    df = compute_features_and_target()
+    df = compute_features_and_target(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+    st.header("統合テーブル生成（特徴量計算まで完了）")
+    st.dataframe(df)
 
     # 学習
     # 必要変数を返す
     # modelはSHAP値計算用、X、dfは結果描画用
-    model, X, df = train_model(df)
+    # ランダムフォレスト
+    #model, X, df = train_random_forest(df)
+    # lightgbm
+    model, X, df = train_lightgbm(df)
 
     return model, X, df
 
-#MARK: 機械学習モデルを適用する
-def train_model(df):
-
-    # todo 仮
-    # # 複数列を同時に変更（辞書形式）
-    # df = df.rename(columns={
-    #     '在庫数（箱）': 'target_在庫数（箱）',
-    #     'No12_発注かんばん数（t-0~t-0）': 'feature_No12_発注かんばん数（t-0~t-0）',
-    #     'No13_西尾東物流センターor部品置き場での滞留かんばん数（t-0~t-0）': 'feature_No13_西尾東物流センターor部品置き場での滞留かんばん数（t-0~t-0）',
-    #     'No18_在庫水準（t-29~t-197）':'feature_No18_在庫水準（t-29~t-197）',
-    #     'No19_直近の生産数を表したもの（t-0~t-8）':'feature_No19_直近の生産数を表したもの（t-0~t-8）',
-    # })
+#MARK: ランダムフォレストモデルを適用する
+def train_random_forest(df):
 
     # 説明変数の設定
     feature_columns = [col for col in df.columns if 'feature' in col]
@@ -67,11 +65,104 @@ def train_model(df):
 
     return model, X, df
 
+#MARK: lightgbmを適用する
+def train_lightgbm(df):
+
+    """
+    LightGBMを用いてモデルを学習する関数
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        学習用データフレーム
+    
+    Returns:
+    --------
+    tuple
+        (学習済みモデル, 説明変数, 元のデータフレーム)
+    """
+
+    # 説明変数の設定
+    feature_columns = [col for col in df.columns if 'feature' in col]
+    #print("使用する特徴量:", feature_columns)
+    X = df[feature_columns]
+
+    # 目的変数の設定
+    target_columns = [col for col in df.columns if 'target' in col]
+    y = df[target_columns]
+
+    # 学習データとテストデータの分割
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.05, random_state=42
+    )
+
+    # 特徴量ごとの制約を定義
+    # constraint_dict = {
+    #     "feature_No1_入庫予定かんばん数_スナップ済": 1,   # 単調増加
+    #     'feature_No2_最近の着工数の状況': -1,  # 単調減少
+    #     'feature_No3_過去のかんばん入出差分': 1,    # 単調増加
+    #     "feature_No4_西尾東~部品置き場の間の滞留かんばん数": -1,  # 単調減少
+    # }
+    # feature_columnsの順序に合わせてリストを作成
+    #monotone_constraints = [constraint_dict[col] for col in feature_columns]
+
+    # 列名のパターンに基づいて制約を定義する関数
+    def get_constraint(column_name):
+        if column_name.startswith('feature_No1'):  # feature_No1で始まる列
+            return 1    # 単調増加
+        elif column_name.startswith('feature_No2'):  # feature_No2で始まる列
+            return -1   # 単調減少
+        elif column_name.startswith('feature_No3'):  # feature_No3で始まる列
+            return 1    # 単調増加
+        elif column_name.startswith('feature_No4'):  # feature_No4で始まる列
+            return -1   # 単調減少
+        elif column_name.startswith('feature_No5'):  # feature_No3で始まる列
+            return 1    # 単調増加
+        else:
+            return 0    # その他の列
+
+    # 制約リストの作成
+    monotone_constraints = [get_constraint(col) for col in feature_columns]
+
+    # LightGBMモデルの学習
+    model = LGBMRegressor(
+        n_estimators=100,
+        max_depth=30,
+        random_state=42,
+        monotone_constraints=monotone_constraints
+    )
+    model.fit(X_train, y_train.squeeze().values)
+
+    # 予測と評価
+    y_pred = model.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred)
+    #print(f"Mean Absolute Error: {mae}")
+
+    return model, X, df
+
 #MARK: 特徴量重要度（SHAP値）の計算
 def compute_feature_importance( model, X):
 
     explainer = shap.TreeExplainer( model, model_output='raw')
     shap_values = explainer.shap_values(X)
+
+    # # SHAPのサマリ結果の表示
+    # fig, ax = plt.subplots()
+    # shap.summary_plot(shap_values, X, feature_names=X.columns, show=False)
+    # # プロットをStreamlitで表示
+    # st.pyplot(fig)
+
+    # # SHAP値を標準化
+    # shap_values_std = np.zeros_like(shap_values)
+    # for i in range(shap_values.shape[1]):  # 各特徴量について
+    #     values = shap_values[:, i]
+    #     shap_values_std[:, i] = (values - np.mean(values)) / np.std(values)
+
+    # # SHAPのサマリ結果の表示
+    # fig, ax = plt.subplots()
+    # shap.summary_plot(shap_values_std, X, feature_names=X.columns, show=False)
+    # # プロットをStreamlitで表示
+    # st.pyplot(fig)
 
     return shap_values
 
@@ -192,20 +283,83 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
         else:
             # パターンが見つからない場合は空
             return 'N/A'
-        
-    # 在庫増
+    
+    # 在庫増（ランキング用）
     # マッピングを '変数名' 列に基づいて '要因名' 列に適用する関数を定義
-    def map_increase_factor(variable):
+    def map_increase_factor_outline(variable):
         if "No1_" in variable:
-            return "「必要な生産に対して発注かんばん数が多い」"
+            return "「納入数が多い」"
         elif "No2_" in variable:
-            return "「計画組立生産台数が少ない」"
+            return "「生産が少ない」"
         elif "No3_" in variable:
-            return "「組立ラインの稼働率が低い」"
+            return "「かんばんが多い」"
         elif "No4_" in variable:
-            return "「納入数が多い（挽回納入）」"
+            return "「None_格納遅れがない」"
         elif "No5_" in variable:
-            return "「仕入先便が早着している」"
+            return "「設計時間外の入庫が多い」"
+        else:
+            return None
+
+    # 在庫減（ランキング用）
+    # マッピングを '変数名' 列に基づいて '要因名' 列に適用する関数を定義
+    def map_decrease_factor_outline(variable):
+        if "No1_" in variable:
+            return "「納入数が少ない」"
+        elif "No2_" in variable:
+            return "「生産が多い」"
+        elif "No3_" in variable:
+            return "「かんばんが少ない」"
+        elif "No4_" in variable:
+            return "「格納遅れ」"
+        elif "No5_" in variable:
+            return "「設計時間外の入庫が少ない」"
+        else:
+            return None
+
+    # 在庫増（詳細用）
+    # マッピングを '変数名' 列に基づいて '要因名' 列に適用する関数を定義
+    def map_increase_factor_detail(variable):
+        if "No1_" in variable:
+            return """
+                    <strong>【発注納入要因】入庫予定かんばん数が多い</strong><br>
+                    ＜説明＞<br>
+                    この値は、ある時点tの在庫数に影響を与える納入要因として、t-τの時点に予定されていた納入かんばん数を示しています。<br>
+                    ここでのτは納入から入庫までの基準リードタイムに相当し、t時点で在庫数に影響を与える納入かんばん数が過去にどれだけ存在していたかを表しています。<br>
+                    ＜考えられる事象＞<br>
+                    ・便Aveより納入かんばん数が多い<br>
+                    ・仕入先挽回納入
+                    """
+        elif "No2_" in variable:
+            return """
+                    <strong>【生産要因】生産が少ない</strong><br>
+                    ＜説明＞<br>
+                    この値は、ある時点tの在庫数に影響を与える生産要因として、特定の時間帯における1分辺りの平均生産台数を表したものです。<br>
+                    これは、ある時点tの在庫数に影響を与える短期減衰要因として働くと考えられます。<br>
+                    ＜考えられる異常＞<br>
+                    ・ライン停止<br>
+                    ・生産変動/計画変更/得意先の需要減
+                    """
+        elif "No3_" in variable:
+             return """
+                    <strong>【かんばん要因】過去（かんばん回転日数前）のかんばん数が多い</strong><br>
+                    この値は、ある時点tにおいて、t-かんばん回転日数以前に発注されたかんばんのうち、<br>
+                    順立装置の入庫予定時間<=t<出庫予定時間を満たすかんばんの数をカウントしたものです。<br>
+                    これはある時点tにおける順立装置の在庫水準を表現したもので、在庫の土台を決定する要因（ベース要因）として働くと考えられます。<br>
+                    1日単位や1週間単位といった比較的長めのスパンで在庫の増減を決定づける要因です。<br>
+                    ＜考えられる事象＞<br>
+                    ・過去の生産が多いことで発注増<br>
+                    ・臨時かんばんの発行
+                    """
+        elif "No4_" in variable:
+            return "「格納遅れ（ここは表示されない）」"
+        elif "No5_" in variable:
+            return """
+                    <strong>【入庫要因】今、入庫予定時間外の入庫が多い</strong><br>
+                    この値は、ある時点tの在庫数に影響を与える要因として、通常の入庫予定（=過去の納入予定かんばん数に納入入庫LTを加味して予測される値）では説明できない、異常な入庫かんばん数を示したものです。<br>
+                    すなわち、t時点に発生した入庫のうち、事前に予測されていなかった異常な増加分を抽出したもので、部品置き場からの入庫や前倒し入庫といった突発的な在庫増加の要因を捉えるものです。<br>
+                    ＜考えられる事象＞<br>
+                    ・滞留からの入庫がいつもより多い
+                    """
         elif "No6_" in variable:
             return "「定期便が早着している」"
         elif "No7_" in variable:
@@ -216,83 +370,68 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
             return "「定期便にいつもよりモノが多い」"
         elif "No10_" in variable:
             return "「発注がある」"
-        elif "No11_" in variable:
-            return "「予定外の入庫がある」"
-        elif "No12_" in variable:
-            return """
-                    <strong>【No1.発注不備】現在、入庫予定かんばん数が多い</strong><br>
-                    ＜説明＞<br>
-                    入庫予定かんばん数は「LINKSのデータ」と「仕入先ダイヤのデータ」をもとに以下で計算されています。<br>
-                    ①西尾東を経由する部品：現在から5時間程度前の納入予定かんばん数<br>
-                    ②直納の部品：現在から1時間程度前の納入予定かんばん数<br>
-                    ※納入と入庫のリードタイムや稼働時間（稼働有無は自動ラックの入出庫で判断）を考慮して計算しています<br>
-                    ＜考えられる事象＞<br>
-                    No1-1：便Aveより納入かんばん数が多い<br>
-                    No1-2：仕入先挽回納入
-                    """
-        elif "No13_" in variable:
-            return "「None西尾東BC or 部品置き場で滞留しているかんばん数が少ない」"
-        elif "No14_" in variable:
-            return """
-                    <strong>【No7.設計外の入庫】現在、設計外の入庫数が多い</strong><br>
-                    ＜説明＞<br>
-                    設計外の入庫とは、設計通りの入庫ではないものを表します。<br>
-                    ＜考えられる事象＞<br>
-                    No7-1.部品置き場などで滞留していた部品を入庫している
-                    """
-        elif "No15_" in variable:
-            return "「None_間口OK」"
-        elif "No16_" in variable:
-            return "「仕入先便早く到着し普段より早い定期便で工場にモノが届いている」"
-        elif "No17_" in variable:
-            return "「過去の生産計画が多いため、外れかんばんが多く、発注かんばんが多い」"
-        elif "No18_" in variable:
-            return """
-                    <strong>【No6.過去のかんばん要因】過去（1週間前程度）の発注かんばん数が多かった</strong><br>
-                    ＜説明＞<br>
-                    在庫推移は時系列で変動しているため、過去の在庫水準が現在の在庫数に寄与していると考えられます。<br>
-                    過去の在庫水準を「LINKSのデータ」をもとに以下で計算しています。<br>
-                    ・かんばん回転日数前から＋1週間の間の発注かんばん数-回収かんばん数<br>
-                    ＜考えられる事象＞<br>
-                    No6-1：生産に対して納入かんばんが多かった
-                    """
-        elif "No19_" in variable:
-            return """
-                    <strong>【No4. 組立要因】直近（現在～1日前まで）の生産数が少ない</strong><br>
-                    ＜説明＞<br>
-                    生産物流システムの着工数<br>
-                    ＜考えられる異常＞<br>
-                    No4-1：ライン停止<br>
-                    No4-2：生産変動/計画変更/得意先の需要変化
-                    """
-        elif "No20_" in variable:
-            return "None他品番の入庫が優先されている"
-        elif "No21_" in variable:
-            return """
-                    <strong>【No2.回収不備】直近（かんばん回転日数前）の回収かんばん数が多い</strong><br>
-                    ＜説明＞<br>
-                    回収かんばん数が少ないor多いと、発注かんばん数が少ないor多くなる可能性があります。<br>
-                    回収かんばん数は「LINKSデータ」をもとに計算しています。<br>
-                    ＜考えられる事象＞<br>
-                    No2-1：過去の生産が多かった<br>
-                    No2-2：かんばん出し忘れを挽回回収した
-                    """
         else:
             return None
 
-    # 在庫減
+    # 在庫減（詳細用）
     # マッピングを '変数名' 列に基づいて '要因名' 列に適用する関数を定義
-    def map_decrease_factor(variable):
+    def map_decrease_factor_detail(variable):
         if "No1_" in variable:
-            return "「必要な生産に対して発注かんばんが少ない」"
+            return """
+                    <strong>【発注納入要因】入庫予定かんばん数が少ない</strong><br>
+                    ＜説明＞<br>
+                    この値は、ある時点tの在庫数に影響を与える納入要因として、t-τの時点に予定されていた納入かんばん数を示しています。<br>
+                    ここでのτは納入から入庫までの基準リードタイムに相当し、t時点で在庫数に影響を与える納入かんばん数が過去にどれだけ存在していたかを表しています。<br>
+                    ＜考えられる事象＞<br>
+                    ・便Aveより納入かんばん数が少ない<br>
+                    ・仕入先未納<br>
+                    ・発注無し
+                    """
         elif "No2_" in variable:
-            return "「計画組立生産台数が多い」"
+             return """
+                    <strong>【生産要因】生産が多い</strong><br>
+                    ＜説明＞<br>
+                    この値は、ある時点tの在庫数に影響を与える生産要因として、特定の時間帯における1分辺りの平均生産台数を表したものです。<br>
+                    これは、ある時点tの在庫数に影響を与える短期減衰要因として働くと考えられます。<br>
+                    ＜考えられる異常＞<br>
+                    ・生産変動/挽回生産<br>
+                    ・計画変更/得意先の需要増<br>
+                    """
         elif "No3_" in variable:
-            return "「組立ラインの稼働率が高い」"
+            return """
+                    <strong>【かんばん要因】過去（かんばん回転日数前）のかんばん数が少ない</strong><br>
+                    ＜説明＞<br>
+                    要因の値は、ある時点tにおいて、t-かんばん回転日数以前に発注されたかんばんのうち、<br>
+                    順立装置の入庫予定時間<=t<出庫予定時間を満たすかんばんの数をカウントしたものです。<br>
+                    これはある時点tにおける順立装置の在庫水準を表現したもので、在庫の土台を決定する要因（ベース要因）として働くと考えられます。<br>
+                    1日単位や1週間単位といった比較的長めのスパンで在庫の増減を決定づける要因です。<br>
+                    ＜考えられる事象＞<br>
+                    ・過去の生産が少ないことで発注減<br>
+                    ・かんばんの出し忘れ<で発注減<br>
+                    ・組立の取り忘れで発注減
+                    """
         elif "No4_" in variable:
-            return "「納入数が少ない（未納）」"
+            return """
+                    <strong>【滞留要因】今、西尾東BCから部品置き場の間で部品が滞留している</strong><br>
+                    ＜説明＞<br>
+                    入庫予定時間を経過しても入庫されていないかんばん数<br>
+                    ＜考えられる事象＞<br>
+                    ・順立装置の設備停止<br>
+                    ・順立前の部品置き場で部品が残っている<br>
+                    ・西尾東BCで誤転送<br>
+                    ・工場ビットの部品OF<br>
+                    ・西尾東で部品が残っている/定期便の乗り遅れ<br>
+                    ・台風積雪などによるトラックの遅延<br>
+                    など
+                    """
         elif "No5_" in variable:
-            return "「仕入先便の遅着」"
+            return """
+                    <strong>【入庫要因】今、入庫予定時間外の入庫が少ない</strong><br>
+                    この値は、ある時点tの在庫数に影響を与える要因として、通常の入庫予定（=過去の納入予定かんばん数に納入入庫LTを加味して予測される値）では説明できない、異常な入庫予定かんばん数を示したものです。<br>
+                    すなわち、t時点に発生した入庫のうち、事前に予測されていなかった異常な増加分を抽出したもので、部品置き場からの入庫や前倒し入庫といった突発的な在庫増加の要因を捉えるものです。
+                    ＜考えられる事象＞<br>
+                    ・滞留からの入庫がいつもより少ない
+                    """
         elif "No6_" in variable:
             return "「定期便の遅着」"
         elif "No7_" in variable:
@@ -303,87 +442,6 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
             return "「定期便にいつもよりモノが少ない」"
         elif "No10_" in variable:
             return "「発注がない」"
-        elif "No11_" in variable:
-            return "「予定外の入庫がない」"
-        elif "No12_" in variable:
-            return """
-                    <strong>【No1.発注不備】現在、入庫予定かんばん数が少ない</strong><br>
-                    ＜説明＞<br>
-                    入庫予定かんばん数は「LINKSのデータ」と「仕入先ダイヤのデータ」をもとに以下で計算されています。<br>
-                    ①西尾東を経由する部品：現在から5時間程度前の納入予定かんばん数<br>
-                    ②直納の部品：現在から1時間程度前の納入予定かんばん数<br>
-                    ※納入と入庫のリードタイムや稼働時間（稼働有無は自動ラックの入出庫で判断）を考慮して計算しています<br>
-                    ＜考えられる事象＞<br>
-                    No.1-1：便Aveより納入かんばん数が少ない<br>
-                    No.1-2：仕入先未納
-                    """
-        elif "No13_" in variable:
-            return """
-                    <strong>【No3.入庫遅れ】現在、西尾東BCから部品置き場の間で部品が滞留している</strong><br>
-                    ＜説明＞<br>
-                    設計時間を経過しても入庫されていないかんばん数<br>
-                    ＜考えられる事象＞<br>
-                    No3-1：順立装置の設備停止<br>
-                    No3-2：順立前の部品置き場で部品が残っている<br>
-                    No3-3：西尾東BCで誤転送<br>
-                    No3-4：工場ビットの部品OF<br>
-                    No3-5：西尾東で部品が残っている/定期便の乗り遅れ<br>
-                    No3-6：台風積雪などによるトラックの遅延<br>
-                    など
-                    """
-        elif "No14_" in variable:
-            return """
-                    <strong>【No7.設計外の入庫】現在、設計外の入庫数が少ない</strong><br>
-                    ＜説明＞<br>
-                    設計外の入庫とは、設計通りの入庫ではないものを表します。<br>
-                    ＜考えられる事象＞<br>
-                    No7-1：部品置き場などで滞留していた部品を入庫していない
-                    """
-        elif "No15_" in variable:
-            return """
-                    <strong>【No5. 他品番の在庫異常】現在、投入間口が一杯で入庫できない</strong><br>
-                    ＜説明＞<br>
-                    いずれかの間口が一杯で投入できない状態を表す<br>
-                    ＜考えられる異常＞<br>
-                    No5-1：偏った箱種の入庫<br>
-                    No5-2：入庫数が多く間口のキャパ越え
-                    """
-        elif "No16_" in variable:
-            return "「仕入先便が遅く到着し、普段より遅い定期便で工場にモノが届いている」"
-        elif "No17_" in variable:
-            return "「過去の生産計画が少ないため、外れかんばんが少なく、発注かんばんが少ない」"
-        elif "No18_" in variable:
-            return """
-                    <strong>【No6.過去のかんばん要因】過去（1週間程度前）の発注かんばん数が少なかった</strong><br>
-                    ＜説明＞<br>
-                    在庫推移は時系列で変動しているため、過去の在庫水準が現在の在庫数に寄与していると考えられます。<br>
-                    過去の在庫水準を「LINKSのデータ」をもとに以下で計算しています。<br>
-                    ・かんばん回転日数前から＋1週間の間の発注かんばん数-回収かんばん数<br>
-                    ＜考えられる事象＞<br>
-                    No6-1：生産に対して納入かんばんが少なかった
-                    """
-        elif "No19_" in variable:
-            return """
-                    <strong>【No4. 組立要因】直近（現在～1日前まで）の生産数が多い</strong><br>
-                    ＜説明＞<br>
-                    生産物流システムの着工数<br>
-                    ＜考えられる異常＞<br>
-                    No4-1：生産変動/挽回生産<br>
-                    No4-2：計画変更/得意先の需要変化
-                    """
-        elif "No20_" in variable:
-            return "None"
-        elif "No21_" in variable:
-            return """
-                    <strong>【No2.回収不備】過去（かんばん回転日数前）の回収かんばん数が少ない</strong><br>
-                    ＜説明＞<br>
-                    回収かんばん数が少ないor多いと、発注かんばん数が少ないor多くなる可能性があります。<br>
-                    回収かんばん数は「LINKSデータ」をもとに計算しています。<br>
-                    ＜考えられる事象＞<br>
-                    No2-1：過去の生産が少ない<br>
-                    No2-2：かんばんの出し忘れ<br>
-                    No2-3：組立の取り忘れ
-                    """
         else:
             return None
 
@@ -404,8 +462,18 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
     
     # -----指定した日時と一致する行を抽出-----
 
-    # 要因の値（説明変数X）
-    filtered_X = X.loc[filtered_merged_data_df.index[0]]# Pandas の .loc[]で1行のみを指定すると、seriesになる
+    # # 要因の値（説明変数X）
+    # filtered_X = X.loc[filtered_merged_data_df.index[0]]# Pandas の .loc[]で1行のみを指定すると、seriesになる
+    # filtered_X.name = '要因の値'
+    # filtered_X.index.name = '変数名'
+    # #st.dataframe(filtered_X)
+
+    # 要因の値（説明変数X）#! 表示用の値に変更
+    # "youin"を含む列だけを抽出
+    youin_columns = [col for col in filtered_merged_data_df.columns if "youin" in col]
+    # その列だけを取り出して新しいデータフレームに
+    X = filtered_merged_data_df[youin_columns]
+    filtered_X = X.loc[filtered_merged_data_df.index[0]]
     filtered_X.name = '要因の値'
     filtered_X.index.name = '変数名'
     #st.dataframe(filtered_X)
@@ -421,6 +489,7 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
     filtered_shap_values = shap_values_df.loc[filtered_merged_data_df.index[0]]# Pandas の .loc[]で1行のみを指定すると、seriesになる
     filtered_shap_values.name = '寄与度（SHAP値）'
     filtered_shap_values.index.name = '変数名'
+    # 寄与度結果の確認
     #st.dataframe(filtered_shap_values)
 
     # -----統合-----
@@ -446,6 +515,19 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
     top_increase_ranking_df = result_df[result_df['寄与度（SHAP値）'] > 0].nlargest(12, '寄与度（SHAP値）')
     top_decrease_ranking_df = result_df[result_df['寄与度（SHAP値）'] < 0].nsmallest(12, '寄与度（SHAP値）')
 
+    # 増と減それぞれで'要因名' 列を作成
+    top_increase_ranking_df['要因名_詳細'] = top_increase_ranking_df['変数名'].apply(map_increase_factor_detail)
+    top_decrease_ranking_df['要因名_詳細'] = top_decrease_ranking_df['変数名'].apply(map_decrease_factor_detail)
+    top_increase_ranking_df['要因名'] = top_increase_ranking_df['変数名'].apply(map_increase_factor_outline)
+    top_decrease_ranking_df['要因名'] = top_decrease_ranking_df['変数名'].apply(map_decrease_factor_outline)
+    # 実行結果の確認
+    #st.dataframe(top_decrease_ranking_df)
+
+    # 不要なやつ削除
+    keyword = 'None'  # 部分一致のキーワード
+    top_increase_ranking_df = top_increase_ranking_df[~top_increase_ranking_df['要因名'].str.contains(keyword, na=False)]
+    top_decrease_ranking_df = top_decrease_ranking_df[~top_decrease_ranking_df['要因名'].str.contains(keyword, na=False)]
+
     # 順位列を追加する
     # 増
     top_increase_ranking_df.reset_index(drop=True, inplace=True)
@@ -457,13 +539,9 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
     top_decrease_ranking_df['順位'] = top_decrease_ranking_df.index
     #st.dataframe(top_increase_ranking_df)
 
-    # 増と減それぞれで'要因名' 列を作成
-    top_increase_ranking_df['要因名'] = top_increase_ranking_df['変数名'].apply(map_increase_factor)
-    top_decrease_ranking_df['要因名'] = top_decrease_ranking_df['変数名'].apply(map_decrease_factor)
-
     # 順位、変数名、値だけを表示し、インデックスは消す
-    top_increase_ranking_df = top_increase_ranking_df[['順位', '要因名', '対象期間', '要因の値', 'いつもの値（ベースライン）', '寄与度（SHAP値）']]
-    top_decrease_ranking_df = top_decrease_ranking_df[['順位', '要因名', '対象期間', '要因の値', 'いつもの値（ベースライン）', '寄与度（SHAP値）']]
+    top_increase_ranking_df = top_increase_ranking_df[['順位', '要因名', '要因名_詳細', '対象期間', '要因の値', 'いつもの値（ベースライン）', '寄与度（SHAP値）']]
+    top_decrease_ranking_df = top_decrease_ranking_df[['順位', '要因名', '要因名_詳細', '対象期間', '要因の値', 'いつもの値（ベースライン）', '寄与度（SHAP値）']]
     #st.dataframe(top_increase_ranking_df)
 
     # 結果を描画する
@@ -494,6 +572,8 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
     # データを昇順で並べ替え（寄与度の高い順）
     top_increase_ranking_df = top_increase_ranking_df.sort_values(by='順位')
     top_decrease_ranking_df = top_decrease_ranking_df.sort_values(by='順位')
+    #　実行結果の確認
+    #st.dataframe(top_decrease_ranking_df)
 
     increse_color = "increase-factor-card"
     decrese_color = "decrease-factor-card"
@@ -633,7 +713,7 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
             <thead>
                 <tr>
                     <th style="text-align:center; padding:10px; border:1px solid #ddd;">順位</th>
-                    <th style="text-align:left; padding:10px; border:1px solid #ddd;">要因名</th>
+                    <th style="text-align:left; padding:10px; border:1px solid #ddd;">要因名_詳細</th>
                     <th style="text-align:center; padding:10px; border:1px solid #ddd;">対象期間</th>
                     <th style="text-align:center; padding:10px; border:1px solid #ddd;">要因の値</th>
                     <th style="text-align:center; padding:10px; border:1px solid #ddd;">いつもの値</th>
@@ -648,7 +728,7 @@ def show_feature_importance( merged_data_df, X, selected_datetime, shap_values):
             html_table += f"""
                 <tr>
                     <td style="text-align:center; padding:10px; border:1px solid #ddd;">{row['順位']}</td>
-                    <td style="text-align:left; padding:10px; border:1px solid #ddd;">{row['要因名']}</td>
+                    <td style="text-align:left; padding:10px; border:1px solid #ddd;">{row['要因名_詳細']}</td>
                     <td style="text-align:center; padding:10px; border:1px solid #ddd;">{row['対象期間']}</td>
                     <td style="text-align:center; padding:10px; border:1px solid #ddd;">{row['要因の値']}</td>
                     <td style="text-align:center; padding:10px; border:1px solid #ddd;">{row['いつもの値（ベースライン）']:.4f}</td>
@@ -681,7 +761,7 @@ if __name__ == "__main__":
     st.header("test")
     st.sidebar.header("test")
 
-    # streamlitのバージョンが1.36.0だと適用される
+    # streamlitのバージョンが1.36.0だとサイズ変更適用される
     # 1.43.2だとサイズ変わらない
     st.markdown(
         """

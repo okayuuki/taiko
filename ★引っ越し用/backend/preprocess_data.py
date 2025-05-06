@@ -1,30 +1,205 @@
 import pandas as pd
 import streamlit as st
-from scipy.stats import trim_mean
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from joblib import Parallel, delayed
+import time
+import numpy as np
 
-#MARK: データ統合
-def merge_data():
+from get_data import compute_hourly_buhin_zaiko_data_by_hinban,\
+    compute_hourly_specific_checkpoint_kanbansu_data_by_hinban,\
+        compute_hourly_tehai_data_by_hinban,\
+            compute_hourly_chakou_data_by_hinban,\
+                get_kado_schedule_from_172_20_113_185
 
-    #日時列を昇順にしておくこと
+# MARK: データ結合
+#todo 在庫推移と時間ズレがある
+def merge_data(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo):
 
-    # todo --------------------------------
-    # CSVファイルのパスを指定
-    file_path = '統合テーブル本番.csv'  
-    # CSVファイルを読み込む
-    merged_df = pd.read_csv(file_path, encoding='shift_jis')
-    # None や NaN をすべて 0 に置き換える
-    merged_df = merged_df.fillna(0)
-    # todo --------------------------------
+    #　時間粒度設定
+    time_granularity = 'h'
 
-    #データ統合
+    #　並列処理（マルチプロセス）
+    def run_parallel_processing(process_number, hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo):
 
-    #返す
+        # プロセス1の処理
+        if process_number == 0:
 
-    return merged_df
+            # 自動ラックの在庫データの読み込み
+            st.header("在庫データの読み込み")
+            zaiko_df = compute_hourly_buhin_zaiko_data_by_hinban(hinban_info, start_datetime, end_datetime, flag_useDataBase, kojo)
+            st.dataframe(zaiko_df)
+
+            # 関所後のかんばんデータ読み込み
+            st.header("関所毎のかんばんデータの読み込み")
+            target_column = '発注日時'
+            haccyu_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(haccyu_kanban_df)
+
+            target_column = '納入予定日時'
+            nonyu_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(nonyu_kanban_df)
+
+            target_column = '順立装置入庫日時'
+            nyuuko_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(nyuuko_kanban_df)
+
+            target_column = '順立装置出庫日時'
+            syukko_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(syukko_kanban_df)
+
+            target_column = '回収日時'
+            kaisyu_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(kaisyu_kanban_df)
+            
+            target_column = '西尾東~部品置き場の間の滞留'
+            tairyu_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(tairyu_kanban_df)
+
+            target_column = '期待かんばん在庫'
+            kako_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(kako_kanban_df)
+
+            target_column = '順立装置内の滞留と前倒し出庫の差分'
+            abnornal_syukko_kanban_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(abnornal_syukko_kanban_df)
+
+            return zaiko_df, haccyu_kanban_df, nonyu_kanban_df, nyuuko_kanban_df, syukko_kanban_df, kaisyu_kanban_df, tairyu_kanban_df, kako_kanban_df, abnornal_syukko_kanban_df
+
+        # プロセス2の処理
+        elif process_number == 1:
+
+            # 手配データの読み込み
+            st.header("手配データの読み込み")
+            tehai_df = compute_hourly_tehai_data_by_hinban(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            st.dataframe(tehai_df)
+
+            return tehai_df
+
+        # プロセス3の処理
+        elif process_number == 2:
+
+            # 着工データの読み込み
+            st.header("着工データの読み込み（刈谷地区だと2分程度時間かかっています）")
+            seisan_buturyu_df = compute_hourly_chakou_data_by_hinban(hinban_info, start_datetime, end_datetime)
+            st.dataframe(seisan_buturyu_df)
+
+            # target_column = '順立装置出庫日時'
+            # seisan_buturyu_df, _ = compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
+            # st.dataframe(seisan_buturyu_df)
+
+            return seisan_buturyu_df
+
+        # プロセス4の処理
+        elif process_number == 3:
+
+            # 稼働時間データの読み込み
+            st.header("稼働データの読み込み")
+            day_col='確定(昼)'
+            night_col='確定(夜)'
+            kado_df = get_kado_schedule_from_172_20_113_185(start_datetime, end_datetime, day_col, night_col, time_granularity)
+            st.dataframe(kado_df)
+
+            return kado_df
+
+    n_jobs = 4
+
+    # # 並列処理
+    # start_time_parallel = time.time()
+    # results_parallel = Parallel(n_jobs=n_jobs)(
+    #     delayed(run_parallel_processing)(process_number, hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo) for process_number in range(4)
+    # )
+    # parallel_time = time.time() - start_time_parallel
+
+    # 逐次処理
+    start_time_sequential = time.time()
+    results_sequential = [
+        run_parallel_processing(process_number, hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo) for process_number in range(4)
+    ]
+    sequential_time = time.time() - start_time_sequential
+    results_parallel = results_sequential
+
+    #実行結果の確認
+    #print(f"並列処理時間: {parallel_time:.2f}秒")
+    #print(f"逐次処理時間: {sequential_time:.2f}秒")
+    #print(f"速度向上率: {sequential_time/parallel_time:.2f}倍")
+
+    # 各プロセスの結果を変数に引き渡す
+    zaiko_df, haccyu_kanban_df, nonyu_kanban_df, nyuuko_kanban_df, syukko_kanban_df, kaisyu_kanban_df, tairyu_kanban_df, kako_kanban_df, abnornal_syukko_kanban_df = results_parallel[0]
+    tehai_df = results_parallel[1]
+    seisan_buturyu_df = results_parallel[2]
+    kado_df = results_parallel[3]
+
+    # 統合
+    st.header("データの統合")
+
+    #　参考
+    #  日時　入庫数　出庫数　在庫数　滞留数
+    #  17時　
+    #  18時　10個　　1個　　10個    2個
+    #  19時　 0個　　0個　　17個
+    # 
+    #　※　在庫は○○時点の値
+
+    # 自動ラックの在庫データ + 関所毎のかんばんデータ（納入予定日時）
+    merge_data_df = pd.merge(zaiko_df, nonyu_kanban_df, on=['日時'], how='left')
+
+    # 統合データ　+ 関所毎のかんばんデータ（発注日時）
+    merge_data_df = pd.merge(merge_data_df, haccyu_kanban_df, on=['日時'], how='left')
+    merge_data_df['発注日時のかんばん数'] = merge_data_df['発注日時のかんばん数'].shift(1)
+
+    # 統合データ　+ かんばんデータ（入庫日時）
+    merge_data_df = pd.merge(merge_data_df, nyuuko_kanban_df, on=['日時'], how='left')
+    #! 在庫が増えるときに、入庫数をつけるために、１つ下の行にシフトさせる
+    merge_data_df['順立装置入庫日時のかんばん数'] = merge_data_df['順立装置入庫日時のかんばん数'].shift(1)
+
+    # 統合データ　+ かんばんデータ（出庫日時）
+    merge_data_df = pd.merge(merge_data_df, syukko_kanban_df, on=['日時'], how='left')
+    #! 在庫が減るるときに、出庫数をつけるために、１つ下の行にシフトさせる
+    merge_data_df['順立装置出庫日時のかんばん数'] = merge_data_df['順立装置出庫日時のかんばん数'].shift(1)
+
+    # 統合データ　+ 関所毎のかんばんデータ（回収日時）
+    merge_data_df = pd.merge(merge_data_df, kaisyu_kanban_df, on=['日時'], how='left')
+    merge_data_df['回収日時のかんばん数'] = merge_data_df['回収日時のかんばん数']
+
+    # 統合データ　+ かんばんデータ（西尾東～部品置き場の間の滞留かんばん数）
+    merge_data_df = pd.merge(merge_data_df, tairyu_kanban_df, on=['日時'], how='left')
+    #! 在庫が増える1つ前まで滞留しているようにしておくためにshift無し
+    merge_data_df['西尾東~部品置き場の間の滞留かんばん数'] = merge_data_df['西尾東~部品置き場の間の滞留かんばん数']
+
+    # 統合データ　+ かんばんデータ（期待かんばん在庫数）
+    merge_data_df = pd.merge(merge_data_df, kako_kanban_df, on=['日時'], how='left')
+    merge_data_df['期待かんばん在庫数'] = merge_data_df['期待かんばん在庫数']
+
+    # 統合データ　+ かんばんデータ（順立装置内の滞留と前倒し出庫の差分数）
+    merge_data_df = pd.merge(merge_data_df, abnornal_syukko_kanban_df, on=['日時'], how='left')
+    merge_data_df['順立装置内の滞留と前倒し出庫の差分_h単位'] = merge_data_df['順立装置内の滞留と前倒し出庫の差分_h単位'].shift(1)
+
+    #! 在庫が増えときに入庫があるようにする
+    merge_data_df["入庫（箱）"] = merge_data_df["入庫（箱）"].shift(1)
+
+    # 統合データ　+ 手配データ
+    merge_data_df = pd.merge(merge_data_df, tehai_df, on=['日時'], how='left')
+
+    # 統合データ + 着工データ
+    merge_data_df = pd.merge(merge_data_df, seisan_buturyu_df, on=['日時'], how='left')
+
+    # 統合データ + 稼働時間データ
+    merge_data_df = pd.merge(merge_data_df, kado_df, on=['日時'], how='left')
+
+    # 数値列のみを選択してNaN/Noneを0に置換
+    #! これしないと平均計算などが期待通りにならない。pythonのmeanはNoneを無視する
+    numeric_columns = merge_data_df.select_dtypes(include=['int64', 'float64']).columns
+    merge_data_df[numeric_columns] = merge_data_df[numeric_columns].fillna(0)
+
+    # 実行結果の保存
+    merge_data_df.to_csv('merge_data関数_統合データ.csv', index=False, encoding='shift_jis')
+
+    return merge_data_df
 
 # MARK:目的変数と説明変数の決定
-def compute_features_and_target():
+#todo 長期休暇除去
+def compute_features_and_target(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo):
 
     # targetの計算
     def compute_target_variable(df, datetime_column, input_column, output_column, target_column, method, trim_ratio):
@@ -114,7 +289,7 @@ def compute_features_and_target():
     # 実績（入庫実績）と設計（入庫予定）のデータを±X時間のタイムトレランス内でスナップ処理しマッチングさせる
     # 納入予定のある行が、近くの実績がある行にスナップされるようにする
     def compute_nyuuko_yotei_kanbansu_by_snapping_with_tolerance( df, kado_column, input_column,
-                                                                  shiftted_column, lt_column, base_column, snap_column, time_tolerance):
+                                                                  shiftted_column, lt_column, base_column, snap_column, snap_column_abnormal, time_tolerance):
 
         # 入庫予定かんばん数列の追加
         def compute_nyuuko_yotei_kanbansu( df, kado_column, input_column, shiftted_column, lt_column):
@@ -126,7 +301,7 @@ def compute_features_and_target():
             処理の流れ：
             1. input_column（例：発注かんばん数）が0でない行のみを対象とする。
             2. 各対象行について、リードタイム（lt_column）を取得し、
-            3. 稼働フラグ（kado_column）が1の行をリードタイム件数分カウントしながら進める。
+            3. 稼働フラグ（kado_column）が0でない行をリードタイム件数分カウントしながら進める。
             4. リードタイム後の行が存在すれば、その行のshiftted_columnにinput_columnの値を加算する。
 
             Parameters:
@@ -180,8 +355,8 @@ def compute_features_and_target():
                 # cursor + 1 < len(df) で データの末尾に到達しないように制限
                 while count < lead_time and cursor + 1 < len(df):
                     cursor += 1
-                    # 稼働フラグ列の値が1なら数を数える
-                    if df.at[cursor, kado_column] == 1:
+                    # 稼働フラグ列の値が0でない数を数える
+                    if df.at[cursor, kado_column] != 0:
                         count += 1
                 #st.write(df.at[idx, "日時"],df.at[idx, input_column],count)
 
@@ -199,7 +374,7 @@ def compute_features_and_target():
 
             処理の流れ：
             1. shiftted_column（納入予定かんばん数）に値がある行のみ対象とする。
-            2. その行を中心として、稼働フラグが1の前後time_tolerance件分の稼働行を取得する。
+            2. その行を中心として、稼働フラグが0でない前後time_tolerance件分の稼働行を取得する。
             3. その範囲内に base_column（納入実績）が0でない行があれば、その最初の行に planned 値をスナップする。
             4. 実績が見つからなければ、自分自身の行に planned を保持する。
 
@@ -233,7 +408,7 @@ def compute_features_and_target():
             df[snap_column] = 0
 
             # 稼働日のインデックス一覧
-            kado_indices = df[df[kado_column] == 1].index.tolist()
+            kado_indices = df[df[kado_column] != 0].index.tolist()
 
             for idx in df.index:
                 planned = df.at[idx, shiftted_column]
@@ -262,11 +437,16 @@ def compute_features_and_target():
                 # 見つかればその行にコピー、見つからなければ自分にコピー
                 if matched_idx is not None:
                     df.at[matched_idx, snap_column] += planned
+                # 見つからない場合
                 else:
-                    df.at[idx, snap_column] += planned
+                    #df.at[idx, snap_column] += planned#元の行に入れる
+                    #df.at[idx, snap_column_abnormal] += planned #もとの行の違う列に入れる
+                    df.at[idx, snap_column] = 0
 
             return df
 
+        df[snap_column_abnormal] = 0
+        
         # 入庫予定かんばん数列の追加
         df = compute_nyuuko_yotei_kanbansu(df, kado_column, input_column, shiftted_column, lt_column)
 
@@ -352,6 +532,49 @@ def compute_features_and_target():
 
         return df
 
+    # 日単位でかんばんを集計
+    def compute_daily_total( df, target_col, datetime_col='日時'):
+
+        """
+        指定された列の日次合計を計算する（8時から翌7時までを1日として集計）
+        
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            入力データフレーム
+        target_col : str
+            集計対象の列名
+        datetime_col : str, default='日時'
+            日時が格納された列名
+        
+        Returns:
+        --------
+        pandas.DataFrame
+            日次合計列が追加されたデータフレーム
+        """
+
+        df_copy = df.copy()
+        
+        # 日時を8時間ずらして新しい日付列を作成
+        df_copy['集計日'] = df_copy[datetime_col].dt.date - pd.Timedelta(hours=8)
+        
+        # 集計日ごとに合計を計算
+        daily_sum = df_copy.groupby('集計日')[target_col].sum().reset_index()
+        st.write(daily_sum)
+        
+        # 元のデータフレームと結合
+        df_copy = df_copy.merge(
+            daily_sum,
+            left_on='集計日',
+            right_on='集計日',
+            suffixes=('', '_日単位')
+        )
+        
+        # 不要な集計日列を削除
+        df_copy = df_copy.drop('集計日', axis=1)
+        
+        return df_copy
+
     # feature_No3の計算
     # 在庫水準
     # 現在庫は、過去にどれだけ発注され、どれだけ消費（回収）されたかの差分の累積によって形成される
@@ -376,8 +599,8 @@ def compute_features_and_target():
         # 結果を保存する列を初期化
         df[output_column] = None
 
-        # 稼働フラグが1の行のインデックスをリスト化
-        kado_indices = df[df[kado_column] == 1].index.tolist()
+        # 稼働フラグが0でない行のインデックスをリスト化
+        kado_indices = df[df[kado_column] != 0].index.tolist()
 
         # 全行をループ
         for current_index in df.index:
@@ -406,7 +629,7 @@ def compute_features_and_target():
             # 平均を計算
             if target_kado_indices:
                 production_values = df.loc[target_kado_indices, input_column]
-                average_value = production_values.mean()
+                average_value = production_values.median()
                 df.at[current_index, output_column] = average_value
 
         return df
@@ -468,10 +691,90 @@ def compute_features_and_target():
         # グラフ表示
         st.plotly_chart(fig, use_container_width=True)
     
-    
+    # 相関カラーマップ
+    def create_correlation_plots(df, column_contains=[], cols_per_row=2):
+
+        # 特定の文字列を含む列を選択
+        selected_columns = df.columns[
+            df.columns.str.contains('|'.join(column_contains))
+        ]
+        
+        # 相関係数を計算
+        correlation = df[selected_columns].corr()
+        
+        # targetカラムの確認
+        target_col = [col for col in selected_columns if 'target' in col.lower()]
+        if not target_col:
+            return {"error": "No target column found"}
+        target_col = target_col[0]
+        
+        # x軸の列（target以外）
+        x_columns = [col for col in selected_columns if col != target_col]
+        
+        figures = {}
+        
+        # 1. ヒートマップの作成
+        heatmap = go.Figure(data=[go.Heatmap(
+            z=correlation.values,
+            x=correlation.columns,
+            y=correlation.columns,
+            colorscale='RdBu_r',
+            zmid=0,
+            text=correlation.round(2).values,
+            texttemplate='%{text}',
+            textfont={"size": 10},
+            hoverongaps=False
+        )])
+        
+        heatmap.update_layout(
+            title='Correlation Heatmap',
+            width=800,
+            height=800,
+            xaxis_tickangle=45,
+            template='plotly_white'
+        )
+        
+        figures['heatmap'] = heatmap
+        
+        # 2. 散布図の作成
+        for col in x_columns:
+            scatter = go.Figure(data=[go.Scatter(
+                x=df[col],
+                y=df[target_col],
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    opacity=0.6,
+                    color='rgba(0, 116, 217, 0.7)'
+                )
+            )])
+            
+            scatter.update_layout(
+                title=f'{col} vs {target_col}',
+                xaxis_title=col,
+                yaxis_title=target_col,
+                width=600,
+                height=600,
+                template='plotly_white',
+                showlegend=False
+            )
+            
+            figures[f'scatter_{col}'] = scatter
+        
+        return figures
+
     # 統合データの読み込み
-    merged_df = merge_data()
+    merged_df = merge_data(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)
     st.dataframe(merged_df)
+
+    st.header("データの前処理")
+
+    #todo 長期休暇削除
+    # 日付範囲を指定して削除
+    start_date = '2024-12-26'
+    end_date = '2025-01-07'
+    merged_df = merged_df[~(merged_df['日時'].between(start_date, end_date))]
+    merged_df = merged_df.reset_index(drop=True)
 
     # ★使用する列名が変わる可能性があるため変数で定義する
 
@@ -479,7 +782,9 @@ def compute_features_and_target():
     # 描画する：True、しない：False
     flag_show = True
 
-    # 目的変数の設定
+    #!-----------------------------------------------------------------------
+    #! 目的変数の設定
+    #!-----------------------------------------------------------------------
     target_datetime_column = '日時'
     target_input_column = '在庫数（箱）'
     target_output_column = 'いつもの在庫数（箱）'
@@ -497,17 +802,30 @@ def compute_features_and_target():
 
     # 説明変数の計算
 
-    # 入庫予定かんばん数_スナップ済を計算する
+    #!-----------------------------------------------------------------------
+    #! 入庫予定かんばん数_スナップ済を計算する
+    #!-----------------------------------------------------------------------
     feature_No1_kado_column = '稼働フラグ'
     feature_No1_input_column = '納入予定日時のかんばん数'
     feature_No1_shiftted_column = '入庫予定かんばん数'
     feature_No1_lt_column = '納入LT(H)'
     feature_No1_base_column = "入庫（箱）" #todo 所在管理で再計算した方がいい？
-    feature_No1_snap_column = "feature_No1_入庫予定かんばん数_スナップ済"
+    delay_start = 0
+    delay_end = 0
+    feature_No1_snap_column = f'feature_No1_入庫予定かんばん数_スナップ済（t-{delay_start}~t-{delay_end}）'
+    feature_No5_snap_column_abnormal = f'feature_No5_設計外の入庫かんばん数（t-{delay_start}~t-{delay_end}）'
     feature_No1_time_tolerance = 1
     features_df = compute_nyuuko_yotei_kanbansu_by_snapping_with_tolerance( features_df, feature_No1_kado_column,
                                                                             feature_No1_input_column, feature_No1_shiftted_column,feature_No1_lt_column,
-                                                                              feature_No1_base_column, feature_No1_snap_column, feature_No1_time_tolerance)
+                                                                              feature_No1_base_column, feature_No1_snap_column, feature_No5_snap_column_abnormal,  feature_No1_time_tolerance)
+    #!　設計外の入庫かんばん数を計算する
+    # 新しい列 'feature_No5_snap_column_abnormal'に結果を格納
+    features_df[feature_No5_snap_column_abnormal] = np.maximum(features_df[feature_No1_base_column] - features_df[feature_No1_snap_column], 0)
+    # youin列作成
+    youin_No1_column = f'youin_No1_入庫予定かんばん数_スナップ済（t-{delay_start}~t-{delay_end}）'
+    features_df[youin_No1_column] = features_df[feature_No1_snap_column]
+    youin_No5_column = f'youin_No5_設計外の入庫かんばん数（t-{delay_start}~t-{delay_end}）'
+    features_df[youin_No5_column] = features_df[feature_No5_snap_column_abnormal]
     # 結果の確認
     # 結果確認する列をリストとして定義
     value_columns = [feature_No1_input_column, feature_No1_shiftted_column, feature_No1_base_column, feature_No1_snap_column]
@@ -515,17 +833,16 @@ def compute_features_and_target():
     plot_result( features_df, target_datetime_column, value_columns, flag_show,
                  graph_title = 'IN関係の推移', yaxis_title = 'IN関係', kado_column = feature_No1_kado_column)
 
-    
-
-    # 物流センターから部品置き場の間の滞留かんばん数を計算する
-
-    
-
-    # 直近のX時間の着工数を活用して、直近の生産状況を定量化する
+    #!-----------------------------------------------------------------------
+    #! 直近のX時間の着工数を活用して、直近の生産状況を定量化する（旧No2）
+    #!-----------------------------------------------------------------------
     feature_No2_kado_column = '稼働フラグ'
-    feature_No2_chakkou_column = '生産台数'
-    feature_No2_recent_chakkousuu_status_and_trend_column = 'feature_No2_最近の着工数の状況'
-    feature_No2_window = 8
+    feature_No2_chakkou_column = '生産台数'#'順立装置出庫日時のかんばん数'
+    feature_No2_window = 40
+    delay_start = feature_No2_window
+    delay_end = 0
+    #feature_No2_recent_chakkousuu_status_and_trend_column = f'feature_No2_最近の着工数の状況（t-{delay_start}~t-{delay_end}）'
+    feature_No2_recent_chakkousuu_status_and_trend_column = '流動機種生産密度'
     features_df = quantify_recent_chakkousuu_status_and_trend(features_df, feature_No2_kado_column,
                                                               feature_No2_chakkou_column, feature_No2_window,
                                                               feature_No2_recent_chakkousuu_status_and_trend_column)
@@ -535,19 +852,50 @@ def compute_features_and_target():
     # 結果を出力
     plot_result( features_df, target_datetime_column, value_columns, flag_show,
                  graph_title = '最近の着工数の推移', yaxis_title = '着工数', kado_column = feature_No2_kado_column)
+    #!-----------------------------------------------------------------------
+    #! 順立装置内の滞留と前倒し出庫の差分数（新No2）
+    #!-----------------------------------------------------------------------
+    delay_start = 0
+    delay_end = 0
+    feature_No2_output_column = f"feature_No2_順立装置内の滞留と前倒し出庫の差分数_間接生産要因（t-{delay_start}~t-{delay_end}）"
+    features_df[feature_No2_output_column] = features_df["順立装置内の滞留と前倒し出庫の差分_時間単位"]
+    # youin列作成
+    youin_No2_column = f"youin_No2_順立装置内の滞留と前倒し出庫の差分数_間接生産要因（t-{delay_start}~t-{delay_end}）"
+    features_df[youin_No2_column] = features_df[feature_No2_recent_chakkousuu_status_and_trend_column]
 
-    
+    #!-----------------------------------------------------------------------
+    #! 過去かんばん
     #todo 発注数と回収数がいる
     #todo 仕入先の稼働も入るから、アイシンの稼働フラグで計算するの難しいな
+    #!-----------------------------------------------------------------------
+    # 在庫水準の計算準備
+    target_col_IN = '納入予定日時のかんばん数'
+    target_col_IN_daily = f'{target_col_IN}_日単位'
+    st.dataframe(features_df)
+    features_df = compute_daily_total( features_df, target_col_IN, datetime_col='日時')
+    target_col_OUT = '回収日時のかんばん数'
+    target_col_OUT_daily = f'{target_col_OUT}_日単位'
+    features_df = compute_daily_total( features_df, target_col_OUT, datetime_col='日時')
     # 在庫水準の計算
     feature_No3_kado_column = '稼働フラグ'
     feature_No3_lt_column = 'かんばん回転日数'
-    feature_No3_input_column = '納入予定日時のかんばん数' #todo　仮
-    feature_No3_output_column = 'feature_No3_過去のかんばん状況'
+    feature_No3_input_column = 'かんばんの入出差分'
+    features_df[feature_No3_input_column] = features_df[target_col_IN_daily] - features_df[target_col_OUT_daily] 
     feature_No3_window = 24*5
+    temp = features_df["かんばん回転日数"] = (features_df["サイクル間隔"] * (features_df["サイクル情報"] + 1)) / features_df["サイクル回数"]
+    #st.write(temp)
+    delay_start = int(temp.max())*24
+    delay_end = int(delay_start + feature_No3_window)
+    feature_No3_output_column = f'feature_No3_過去のかんばん（t-{delay_start}~t-{delay_end}）'
     features_df = compute_zaiko_level(features_df, feature_No3_kado_column, feature_No3_lt_column,
                                        feature_No3_input_column, feature_No3_window,
                                        feature_No3_output_column)
+    #todo
+    #todo 色々計算しているけど、期待かんばん在庫数を入れる
+    features_df[feature_No3_output_column] = features_df['期待かんばん在庫数']
+    # youin列作成
+    youin_No3_column = f'youin_No3_過去のかんばん（t-{delay_start}~t-{delay_end}）'
+    features_df[youin_No3_column] = features_df[feature_No3_output_column]
     # 結果の確認
     features_df_temp = features_df[['日時', feature_No3_kado_column, feature_No3_input_column,
                                      feature_No3_output_column]]
@@ -559,13 +907,76 @@ def compute_features_and_target():
     plot_result( features_df, target_datetime_column, value_columns, flag_show,
                  graph_title = '過去のかんばん推移', yaxis_title = 'かんばん数', kado_column = feature_No3_kado_column)
 
+    #!-----------------------------------------------------------------------
+    #! 物流センターから部品置き場の間の滞留かんばん数を計算する
+    #!-----------------------------------------------------------------------
+    delay_start = 0
+    delay_end = 0
+    feature_No4_output_column = f"feature_No4_西尾東~部品置き場の間の滞留かんばん数（t-{delay_start}~t-{delay_end}）"
+    features_df[feature_No4_output_column] = features_df["西尾東~部品置き場の間の滞留かんばん数_時間単位"]
+    # youin列作成
+    youin_No4_column = f"youin_No4_西尾東~部品置き場の間の滞留かんばん数（t-{delay_start}~t-{delay_end}）"
+    features_df[youin_No4_column] = features_df["西尾東~部品置き場の間の滞留かんばん数_枚数単位"]
+    # 結果の確認
+    features_df_temp = features_df[['日時', feature_No3_kado_column, target_column,
+                                     feature_No4_output_column]]
+    st.dataframe(features_df_temp)
+    # 結果を出力
+    value_columns = [feature_No4_output_column]
+    plot_result( features_df, target_datetime_column, value_columns, flag_show,
+                 graph_title = '滞留かんばん推移', yaxis_title = 'かんばん数', kado_column = feature_No3_output_column)
+    #　数値型に変換
+    features_df[feature_No1_snap_column] = features_df[feature_No1_snap_column].astype(float)
+    features_df[feature_No2_recent_chakkousuu_status_and_trend_column] = features_df[feature_No2_recent_chakkousuu_status_and_trend_column].astype(float)
+    features_df[feature_No3_output_column] = features_df[feature_No3_output_column].astype(float)
+    features_df[feature_No4_output_column] = features_df[feature_No4_output_column].astype(float)
+    features_df[feature_No5_snap_column_abnormal] = features_df[feature_No5_snap_column_abnormal].astype(float)
+    features_df[target_column] = features_df[target_column].astype(float)
+
+    # データ調整
+
+    #! 小数点第三で四捨五入（小数多いとナイーブに反応する)
+    features_df[feature_No2_recent_chakkousuu_status_and_trend_column] = features_df[feature_No2_recent_chakkousuu_status_and_trend_column].round(2)
+
+    # 特定の列の型を確認
+    column_name = feature_No2_recent_chakkousuu_status_and_trend_column  # 確認したい列名
+    st.write(f"\n{column_name}の型:")
+    st.write(f"データ型: {features_df[column_name].dtype}")
+
+    # 数値列のみを選択してNaN/Noneを0に置換
+    #! これしないと平均計算などが期待通りにならない。pythonのmeanはNoneを無視する
+    numeric_columns = features_df.select_dtypes(include=['int64', 'float64']).columns
+    features_df[numeric_columns] = features_df[numeric_columns].fillna(0)
+
+    figs = create_correlation_plots(features_df, ['feature', 'target'])
+
+    # ヒートマップの表示
+    st.subheader("Correlation Heatmap")
+    st.plotly_chart(figs['heatmap'], use_container_width=True)
+
+    # 散布図の表示
+    st.subheader("Scatter Plots")
+    for key, fig in figs.items():
+        if key.startswith('scatter'):
+            st.plotly_chart(fig, use_container_width=True)
     
     return features_df
 
-#MARK: 単独テスト
+# MARK: 単独テスト用
 if __name__ == "__main__":
-    
-    print("test")
 
-    df = compute_features_and_target()
-    print(df)
+    kojo = 'anjo1'
+    hinban_info = ['9014860027', '1Y']
+    start_datetime = '2024-10-01 00:00:00'
+    end_datetime = '2025-03-12 09:00:00'
+    flag_useDataBase = 1
+    target_column = '納入予定日時'
+
+    merge_data(hinban_info, start_datetime, end_datetime, flag_useDataBase, kojo)
+
+
+
+    
+
+
+   
