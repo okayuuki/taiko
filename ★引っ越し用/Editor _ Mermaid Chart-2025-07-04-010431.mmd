@@ -1,0 +1,601 @@
+---
+config:
+  theme: redux
+---
+flowchart TD
+ subgraph s1["関数（在庫データ読み込み）：<br>compute_hourly_buhin_zaiko_data_by_hinban(hinban_info, start_datetime, end_datetime, flag_useDataBase, kojo)"]
+        n10["引数（対象品番、対象整備室、対象期間）に基づき、在庫データの読み込み"]
+        n4["品番・整備室コード・拠点所番地対応マスター作成"]
+        n13["在庫データに品番・整備室コード・拠点所番地マスターを統合<br>（キー：品番、拠点所番地）<br>★在庫データに整備室コードが追加される"]
+        n19["在庫データ<br>"]
+        n187["在庫データ"]
+        n188["品番・整備室コード・拠点所番地マスター"]
+        n189["引数に基づいて、対象整備室のみ抽出"]
+        n190["列名の変更<br>（更新日時→日時、現在在庫（箱）→在庫数（箱））"]
+  end
+ subgraph s2["関数（かんばんデータ読み込み）：<br>compute_hourly_specific_checkpoint_kanbansu_data_by_hinban(hinban_info, target_column, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)"]
+        n16["引数（対象品番、対象整備室、対象期間）に基づいて、かんばんデータ読み込み"]
+        n46["引数毎の処理を判定"]
+        n47["時間粒度の引数に基づいて、順立装置内の滞留と前倒し出庫の差分数を集計"]
+        n48["かんばんデータに仕入先ダイヤデータを統合<br>（キー：整備室コード、仕入先名、仕入先工場名）"]
+        n49["仕入先ダイヤデータの読み込み"]
+        n50["納入便列と納入日列をもとに納入予定日時列を作成"]
+        n51["納入予定日時列と納入LT列から非稼働時間をスキップして入庫予定日時列を計算<br>"]
+        n52@{ label: "順立装置入庫日時と順立出庫日時列を仮想FIFOに変換<br>【内容】<span style=\"padding-left:\">順立装置においては、先入先出し（FIFO）の原則が厳密には適用されていない。</span><span style=\"padding-left:\">このため、在庫変動を適切に分析するには、入庫（IN）および出庫（OUT）の順序を仮想的にFIFOに準拠する形で補正することが必要である。補正手順としては、まず入庫時刻（IN）を昇順に整列し、次に出庫時刻（OUT）も昇順に整列する。その後、昇順に整列した入庫データに対し、同様に昇順に並べた出庫時刻を順次割り当てることで、仮想的なFIFO対応を構築する。</span>" }
+        n53["順立装置入庫日時_FIFO補正済列と入庫出庫補正LT分布から生成されたリードタイムとを用いて、出庫予定日時を計算"]
+        n21["納入予定かんばん数データ"]
+        n22["西尾東～部品置き場の滞留かんばん数データ"]
+        n23["期待在庫かんばん数データ"]
+        n24["順立装置内の滞留と前倒し出庫の差分かんばん数データ"]
+        n168["検収日時列に基づく順立装置入庫日時列の補完<br>【内容】入庫日時が欠損しているにもかかわらず出庫日時が存在するかんばんに対し、検収日時と入庫日時の既存ペアをもとに入庫日時を補完。<br>【理由】所在管理テーブル由来の異常値に対する暫定対応。"]
+        n191["納入便がNoneの行を削除"]
+        n192["かんばん数の判定"]
+        n193["検収日時、順立装置入庫日時、順立装置出庫日時をdatetime型にする"]
+        n194["順立装置入庫日時_仮想FIFO列と順立装置出庫日時_仮想FIFO列から入庫出庫LT列（入庫出庫補正LT列と呼ぶ）を計算"]
+        n195["入庫出庫補正LT列に対して、カーネル密度推定を適用し、分布を計算する"]
+        n196["入庫出庫補正LT分布からサンプリングすることで、リードタイムを抽出"]
+        n197@{ label: "出庫予定日時列を仮想FIFOに変換<br><span style=\"color:\">【内容】</span>出庫予定日時列の値を昇順に並べたリストを作り、それをそのまま 出庫予定日時 列に代入" }
+        n199["時間粒度の引数に基づいて、滞留かんばん数を集計"]
+        n200["時間粒度の引数に基づいて、期待かんばん在庫数を集計"]
+  end
+ subgraph s3["関数（手配データ読み込み）：<br>get_hinban_info_detail(hinban_info, selected_datetime, flag_display, flag_useDataBase, kojo)"]
+        n29["引数（対象期間、対象工場）に基づいて、手配必要数データを読み込み"]
+        n30["手配必要数データ縦展開（行と列を反転）"]
+        n32["引数（対象工場）に基づいて、手配運用情報読み込み"]
+        n31["手配必要数データと手配運用情報データ統合<br>（キー：品番、整備室コード）"]
+        n34["工場・整備室コード・仕入先名・仕入先工場名マスター作成"]
+        n36["手配データに仕入先名マスターを統合<br>（キー：品番、整備室コード）<br>"]
+        n35["仕入先ダイヤデータの読み込み"]
+        n37["手配データに仕入先ダイヤデータを統合<br>（キー：仕入先名、仕入先工場名、整備室コード）"]
+        n38["不等ピッチ係数列を活用して、設計値MAX更新"]
+        n39["引数に基づいて、対象品番＆対象整備室コードのデータを抽出"]
+        n40["時間粒度の引数に基づいて、データを拡張（必要数データは1単位のため、1時間単位に変換するなどの前処理が必要）"]
+        n41["工場の時間割を考慮してデータを補正（0時から8時までは前の日の必要数に置き換える。工場の1日の扱いは8時スタートのため）"]
+        n43["引数に基づいて指定期間を抽出"]
+        n44["手配データ"]
+        n81["手配必要数＆手配運用情報テーブル"]
+        n218["日付列から週番号列作成"]
+        n219["品番、整備室コード列をクリーニング（-などを削除）"]
+        n220["週番号列と必要数列から週最大日量数列、週最大日量数（箱数）列を計算"]
+        n221["週最大日量数列、サイクル情報列などから、便Ave列、設計値MIN列、設計値MAX（この時点では不等ピッチは未考慮）列を作成"]
+        n222["工場・整備室コード・仕入先名、仕入先工場名マスター"]
+        n224["仕入先名異常判定"]
+        n225["異常メッセージ表示"]
+        n226["仕入先名のユニーク値を１つにする<br>※暫定対応"]
+        n227["対象年月行のみ抽出"]
+        n228["各時間ごとに月末までの最大日量数列を計算"]
+  end
+ subgraph s4["関数（データ統合）：<br>merge_data(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)"]
+        n45["引数に基づいてデータ抽出"]
+        n58["データ統合<br>（キー：日時）"]
+        n60["統合テーブル"]
+        n255["メモ）対象品番、対象整備室コードのデータを各DBから収集する。次のステップの統合は「日時」をもとにおこなう"]
+  end
+ subgraph s5["関数（仕入先ダイヤ読み込み）：<br>get_shiiresaki_bin_data(kojo)"]
+        n54["引数kojoを基に対象工場の仕入先ダイヤエクセルを決定し、データフレームとして読み込む"]
+        n56["各仕入先（各行）に対して不等ピッチ時間等の計算"]
+        n55["一部の列名を変更する（受入→整備室コード、発送場所名→仕入先工場名に列名を変更）"]
+        n57["仕入先ダイヤデータ"]
+        n169["前ステップで作成したデータフレームから対象列（仕入先名、発送場所名、受入など）を抽出する"]
+        n173["不等ピッチ時間等を0に設定"]
+        n174["最長便ピッチ時間（分）と等ピッチ時間（分）を計算して、不等ピッチ時間（分）を算出"]
+        n175["不等ピッチ時間（分）を日数換算にし、不等ピッチ係数（日）を求める"]
+  end
+ subgraph s7["関数（稼働フラグの計算）：<br>get_kado_schedule_from_172_20_113_185(start_datetime, end_datetime, day_col, night_col, time_granularity)<br>"]
+        n61["引数に基づいて時間粒度を決定し、残業、休日稼働無しの基本稼働テーブルを作成する<br>"]
+        n62["対象ラインと対象年月を指定し、対象の残業CSVファイルを読み込む"]
+        n64["残業時間に基づいて、基本稼働テーブルを更新"]
+        n65["稼働フラグテーブル"]
+        n66["引数に基づいて残業時間を参照"]
+        n178["引数に基づいて対象期間のみ抽出する"]
+        n179["基本稼働テーブルを採用する"]
+        n180["基本稼働テーブル"]
+        n181["メモ）分析は、確定列、予測は計画列を参照する"]
+  end
+ subgraph s10["関数（生産物流システムの生産指示データ読み込み）<br>compute_hourly_chakou_data_by_hinban(hinban_info, start_datetime, end_datetime)"]
+        n69["部品品番・製品品番マスターを読み込む"]
+        n232["引数（対象部品品番）に基づいて、対象製品品番群を特定<br>（引数の部品に紐づくユニークな製品品番を特定）"]
+        n233["年月のディレクトリパスを生成"]
+        n234["引数に基づいて対象年月毎の処理を繰り返し行う"]
+        n235["日付毎の処理を繰り返し行う"]
+        n236["該当日付フォルダーの全ファイル取得"]
+        n237["ファイル毎の処置を繰り返し行う"]
+        n238["ファイル名から時刻を取得<br>（ファイル名がTYAKJ&amp;N4_002741のようになっているため、_の後ろを時刻データとして取得）"]
+        n239["ファイルを読み込む"]
+        n240["時刻とファイルの中身をリストに追加"]
+        n241["リストをデータフレーム化"]
+        n242["対象日付フォルダーの取得"]
+        n245["作成したデータフレームに対して、以下処理を行う<br>①改行文字で分解し、複数列に展開<br>②列名を変更"]
+        n246["1時間単位で集計"]
+        n247["製品品番毎の出現回数を集計"]
+        n248["結果を保存"]
+        n249["すべての結果を統合し、データフレーム化する"]
+        n250["列名クリーニング（空白削除）"]
+        n251["列名変更（社内品番にする）"]
+        n252["対象品番を抽出"]
+        n253["対象品番の合計台数を計算する"]
+        n254["生産指示データ"]
+  end
+ subgraph s11["関数（在庫全品番データ読み込み）"]
+        n75["ある特定期間の全品番のデータ読み込み"]
+        n76["品番・整備室コード・拠点所番地対応マスター作成"]
+        n77["在庫データと整備室コード統合<br>（キー：品番、拠点所番地）"]
+        n78["列名変更"]
+        n79["在庫データ<br>（スコープ、全品番、特定期間）"]
+  end
+ subgraph s12["関数（異常判定）visualize.py/show_abnormal_results"]
+        n82["ある特定期間の全品番の在庫データを読み込み"]
+        n83["手配データ読み込み"]
+        n84["在庫データと手配データの統合<br>（キー：品番、整備室コード、日付）"]
+        n85["在庫中央値が設計値MAXを超えている品番は削除"]
+        n86["特定の日時抽出"]
+        n88["結果を描画"]
+        n89["設計値MAX越え設計値MIN割れ評価"]
+  end
+ subgraph s13["関数（品番情報表示）get_data.py/get_hinban_info_detail"]
+        n90["引数に基づいて手配データの読み込み"]
+        n91["対象列（整備室コードや仕入先名、品番など）を抽出し、品番情報テーブルを作成する"]
+        n92["結果を表示"]
+        n182["引数に基づいて、品番情報をアプリ画面に描画するか判定"]
+        n183["品番情報が欠損していたか判定"]
+        n184["異常メッセージのアプリ画面に表示"]
+        n186["品番情報テーブル"]
+  end
+ subgraph s14["関数（機械学習）apply_model.py/pipeline"]
+        n93["目的変数と説明変数を作成する"]
+        n96["学習する"]
+        n97["特徴量有り統合テーブル"]
+        n98["説明変数X"]
+        n99["学習済モデル"]
+        n257["モデルを定義する"]
+  end
+ subgraph s15["関数（特徴量計算）：<br>compute_features_and_target(hinban_info, start_datetime, end_datetime, time_granularity, flag_useDataBase, kojo)"]
+        n94["引数に基づいて、統合テーブルを読み込む"]
+        n95["特徴量含む統合テーブル"]
+        n256["特徴量を作成する"]
+  end
+ subgraph s16["関数（在庫推移）：<br>show_zaiko_with_baseline( merged_data_df, start_datetime, end_datetime, highlight_datetime)"]
+        n100["特定日時を抽出"]
+        n101["在庫＋基準線を描画"]
+        n102["データ読み込み"]
+  end
+ subgraph s17["関数（特徴量重要度計算）：<br>compute_feature_importance( model, X)<br><br>"]
+        n103["特徴量重要度計算"]
+        n104["特徴量重要度テーブル"]
+  end
+ subgraph s18["関数（特徴量重要度描画）：<br>show_feature_importance( merged_data_df, X, selected_datetime, shap_values)"]
+        n105["特定日時で抽出"]
+        n107["要因の値列抽出＆X更新"]
+        n108["Xのいつもの値計算"]
+        n109["特定日時に対応する特徴量柔道度を抽出"]
+        n110["データ統合<br>（キー：変数名）"]
+        n111["対象期間列を新しく作成"]
+        n106["在庫増と減で結果を分割"]
+        n112["詳細説明列、不合理な結果削除、順位情報追加"]
+        n113["グラフやカードなどの結果を描画する"]
+        n258["いつものXのリスト"]
+        n259["特徴量テーブル"]
+  end
+ subgraph s19["関数（品番整備室コードマスター作成）：<br>get_hinban_master(kojo)"]
+        n114["手配データを読み込む"]
+        n115["ユニークな品番＆整備室コードの組み合わせを抽出"]
+        n116["ユニーク品番整備室コードマスター"]
+  end
+ subgraph s20["関数（在庫リミット計算結果表示）"]
+        n117["選択品番情報表示"]
+        n118["リミット計算"]
+  end
+ subgraph s21["関数（在庫リミット計算処理）：fprecast_data.py/setupand_run_simulation"]
+        n119["在庫データ読み込み"]
+        n120["INかんばん読み込み"]
+        n121["手配データ読み込み"]
+        n122["日量を16分単位に変換"]
+        n123["稼働データ読み込み"]
+        n124["納入LTを抽出"]
+        n125["工場到着予定かんばん数の計算"]
+        n126["在庫シミュレーション"]
+        n129["未来在庫推移結果（箱+部品換算）テーブル"]
+        n130["未来在庫推移（箱＊部品換算）テーブル"]
+        n131["未来在庫計算結果（部品換算）テーブル"]
+        n132["未来在庫推移（部品換算）テーブル"]
+        n133["未来在庫計算結果（箱換算）テーブル"]
+        n134["未来在庫推移（箱換算）テーブル"]
+  end
+ subgraph s22["関数（在庫予測表示）：<br>show_results_of_future_zaiko(target_column, start_datetime, run_mode, out_parameter, kojo, flag_useDataBase)"]
+        n136["在庫予測"]
+  end
+ subgraph s23["関数（在庫予測計算）：forecastdat.py/compute_future_zaiko"]
+        n137["ユニークな品番を抽出"]
+        n140["for unigue_hinban in unique_hinbans"]
+        n141["在庫シミュレーション"]
+        n142["設計値MIN割れMAX越え判定"]
+        n143["在庫推移プロット"]
+        n144["経過時間を計算"]
+        n145["在庫推移を画像で保存"]
+        n146["結果をリストに追加"]
+        n147["結果を画面に表示"]
+        n260["リストをデータフレームにする"]
+  end
+ subgraph s24["関数（在庫シミュレーション）：forecast_data.py/setup_and_run_simulationfast"]
+        n148["在庫データ読み込み"]
+        n152["納入予定かんばんデータ読み込み"]
+        n164["手配データ読み込み"]
+        n165["1時間当たりの日量を計算"]
+        n166["工場到着予定かんばん数の計算"]
+        n167["在庫シミュレーション"]
+        n261["未来在庫数テーブル"]
+  end
+ subgraph s25["関数（在庫リミット計算）：forecast_data.py/compute_zaiko_limit"]
+        n150["在庫シミュレーション"]
+        n151["結果を表示"]
+  end
+ subgraph s26["関数（仕入先名マスター作成）：<br>compute_master_of_shiiresaki(start_datetime, end_datetime, kojo)"]
+        n202["引数（過去半年）に基づいて、かんばんデータを読み込み"]
+        n201["ユニークな品番、整備室コード、仕入先名、仕入先工場名の組み合わせを計算"]
+        n203["品番、整備室コード、仕入先名が空白でない行のみ抽出"]
+        n204["品番、整備室コード、仕入先名。仕入先工場名マスター"]
+  end
+ subgraph s27["関数（手配必要数データの作成）：<br>get_active_data_tehaisu(start_date, end_date, kojo)"]
+        n205["引数（対象期間、対象工場）に基づいて、手配必要数データを読み込み"]
+        n206["対象整備室の行だけを抽出する"]
+        n207["最新verのみ抽出する"]
+        n208["メモ）統合テーブル化する場合、毎週更新が必要"]
+        n209["対象列を抽出する"]
+        n210["列名変更（英数字表記を日本語表記にする。例えば、FDTHK01を対象年月に変換）"]
+        n211["手配必要数テーブル"]
+  end
+ subgraph s28["関数（手配運用テーブルの作成）：<br>get_active_data_tehaiunyo(kojo)"]
+        n212["対象列決定"]
+        n213["対象列の読み込み"]
+        n214["列名変更（英数字表記を日本語表記に変換）"]
+        n215["サイクル情報を数値に変換（例えば01を1に変換）"]
+        n216["品番列を修正（-などを削除）"]
+        n217["手配運用テーブル"]
+  end
+    n9["自動ラックQRテーブル<br>（Dr.sum）"] --> n10 & n75
+    n8["在庫推移テーブル<br>（Dr.sum）"] --> n4 & n76
+    n10 --> n187
+    n4 --> n188
+    n15["所在管理テーブル<br>（Dr.sum）"] -.-> n16
+    n16 --> n191
+    n13 --> n189
+    n26["仕入先ダイヤエクセル<br>"] --> n54
+    n27["手配必要数テーブル<br>（IBM_DB）"] --> n205
+    n29 --> n30
+    n28["手配運用情報テーブル<br>（IBM_DB）"] --> n212
+    n30 --> n31
+    n32 --> n31
+    n31 --> n218
+    n34 --> n222
+    n35 --> n37
+    n36 --> n37
+    n37 --> n38
+    n38 --> n39
+    n39 --> n224
+    n40 --> n41
+    n41 --> n228
+    n43 --> n44
+    n19 --> n45 & n119
+    n21 --> n45 & n120 & n152
+    n22 --> n45 & n170["Untitled Node"]
+    n23 --> n45
+    n24 --> n45
+    n44 --> n45 & n90 & n121 & n164
+    n46 -- target_columnが順立装置内の滞留と前倒し出庫の差分の場合 --> n47
+    n46 -- target_columnが期待かんばん在庫の場合 --> n200
+    n46 -- target_columnが納入予定日時の場合 --> n21
+    n49 --> n48
+    n48 --> n50
+    n50 --> n51
+    n51 --> n52
+    n52 --> n194
+    n53 --> n197
+    n47 --> n24
+    n54 --> n169
+    n56 -- 納入回数が1回などで不等ピッチを計算できない場合 --> n173
+    n56 -- 不等ピッチ等を計算できる場合 --> n174
+    n55 --> n57
+    n57 --> n49 & n35
+    n45 --> n58
+    n45 -.- n255
+    n58 --> n60
+    n63["異常お知らせ版<br>\\172.20.113.185\異常お知らせ板\data"] -- <br> --> n62
+    n62 -- 残業csvファイルを読み込める場合 --> n66
+    n64 --> n178
+    n66 --> n64
+    n65 --> n45 & n123
+    n69 --> n232
+    n75 --> n77
+    n76 --> n77
+    n77 --> n78
+    n78 --> n79
+    n79 --> n82 & n148
+    n81 --> n83 & n114
+    n81 -- バックアップ（今日既に作成したもの）があればバックアップから用意。無ければ新規作成 --> n36
+    n82 --> n84
+    n83 --> n84
+    n84 --> n85
+    n85 --> n86
+    n86 --> n89
+    n89 --> n88
+    n90 --> n91
+    n91 --> n182 & n186
+    n95 --> n93
+    n60 --> n94
+    n94 --> n256
+    n93 --> n257 & n98 & n97
+    n96 --> n99
+    n100 --> n101
+    n102 --> n100
+    n97 --> n102 & n105
+    n98 --> n103
+    n99 --> n103
+    n103 --> n104
+    n105 --> n107 & n109
+    n107 --> n108
+    n104 --> n109
+    n108 --> n258
+    n109 --> n259
+    n110 --> n111
+    n111 --> n106
+    n106 --> n112
+    n112 --> n113
+    n114 --> n115
+    n115 --> n116
+    n92 --> n183
+    n117 --> n118
+    n121 --> n122
+    n122 --> n124 & n126
+    n124 --> n125
+    n120 --> n125
+    n125 --> n126
+    n123 --> n126
+    n119 --> n126
+    n126 --> n129 & n130 & n131 & n132 & n133 & n134
+    n136 -.- s23
+    n116 --> n137
+    n137 --> n140
+    n140 --> n141
+    n141 --> n142
+    n141 -.- s24
+    n142 --> n143
+    n143 --> n144
+    n144 --> n145
+    n145 --> n146
+    n146 -- 他の品番が残っている場合 --> n140
+    n146 -- すべての品番の処理が終わった --> n260
+    s25 -.- n118
+    n150 --> n151
+    n150 -.- s21
+    n164 --> n165
+    n165 --> n166 & n167
+    n152 --> n166
+    n166 --> n167
+    n148 --> n167
+    n168 --> n48
+    n169 --> n56
+    n173 --> n175
+    n174 --> n175
+    n175 --> n55
+    n176["メモ）ライン毎にCSVファイルの格納方法が違うことがある"] -.- n63
+    n61 --> n180
+    n178 --> n65
+    n62 -- ファイルが見つからないなどで残業csvファイルを読み込めない場合 --> n179
+    n179 --> n65
+    n180 --> n179 & n64
+    n181 -.- n62
+    n182 -- 可視化フラグが1の場合 --> n92
+    n183 -- 欠損がある場合 --> n184
+    n186 --> n117
+    n187 --> n13
+    n188 --> n13
+    n189 --> n190
+    n190 --> n19
+    n191 --> n192
+    n192 -- かんばんが1枚以上ある場合 --> n193
+    n193 --> n168
+    n194 --> n195
+    n195 --> n196
+    n196 --> n53
+    n197 --> n46
+    n46 -- target_columnが西尾東～部品置き場の滞留の場合 --> n199
+    n199 --> n22
+    n200 --> n23
+    n201 --> n204
+    n15 --> n202
+    n202 --> n203
+    n203 --> n201
+    n204 --> n34
+    n205 --> n206
+    n206 --> n207
+    n207 -.- n208
+    n207 --> n209
+    n209 --> n210
+    n210 --> n211
+    n211 --> n29
+    n212 --> n213
+    n213 --> n214
+    n214 --> n215
+    n215 --> n216
+    n216 --> n217
+    n217 --> n32
+    n218 --> n219
+    n219 --> n220
+    n220 --> n221
+    n221 -- バックアップ作成 --> n81
+    n222 --> n36
+    n224 -- 仕入先名のユニーク値が2種類以上ある場合 --> n225
+    n225 --> n226
+    n226 --> n227
+    n224 --> n227
+    n227 --> n40
+    n228 --> n43
+    n230["生産物流システム_流動機種_マスター品番.csv"] --> n69
+    n230 -.- n231["メモ）どの部品がどの製品と紐づくかのマスターが必要"]
+    n232 --> n233
+    n233 --> n234
+    n234 -- 年月指定 --> n242
+    n235 --> n236
+    n236 --> n237
+    n74["着工実績送信のバックアップファイル"] --> n236
+    n237 --> n238
+    n238 --> n239
+    n239 --> n240
+    n240 -- 対象ファイルが残っている場合 --> n237
+    n240 -- すべてのファイルの処理が終わった場合 --> n235 & n241
+    n242 --> n235
+    n241 --> n245
+    n245 --> n246
+    n246 --> n247
+    n248 -- すべての年月の処理が終わってない場合 --> n234
+    n248 -- すべての年月の処理が終わった場合 --> n249
+    n247 --> n248
+    n249 --> n250
+    n250 --> n251
+    n251 --> n252
+    n252 --> n253
+    n253 --> n254
+    n254 --> n45
+    n256 --> n95
+    n257 --> n96
+    n258 --> n110
+    n259 --> n110
+    n260 --> n147
+    n167 --> n261
+    n10@{ shape: rect}
+    n13@{ shape: rect}
+    n19@{ shape: internal-storage}
+    n187@{ shape: internal-storage}
+    n188@{ shape: internal-storage}
+    n46@{ shape: diam}
+    n47@{ shape: rect}
+    n49@{ shape: rect}
+    n50@{ shape: rect}
+    n51@{ shape: rect}
+    n52@{ shape: rect}
+    n53@{ shape: rect}
+    n21@{ shape: internal-storage}
+    n22@{ shape: internal-storage}
+    n23@{ shape: internal-storage}
+    n24@{ shape: internal-storage}
+    n192@{ shape: decision}
+    n197@{ shape: rect}
+    n30@{ shape: rect}
+    n32@{ shape: rect}
+    n34@{ shape: rect}
+    n36@{ shape: rect}
+    n37@{ shape: rect}
+    n38@{ shape: rect}
+    n39@{ shape: rect}
+    n40@{ shape: rect}
+    n41@{ shape: rect}
+    n43@{ shape: rect}
+    n44@{ shape: internal-storage}
+    n81@{ shape: internal-storage}
+    n222@{ shape: internal-storage}
+    n224@{ shape: diam}
+    n58@{ shape: rect}
+    n60@{ shape: internal-storage}
+    n54@{ shape: rect}
+    n56@{ shape: diam}
+    n57@{ shape: internal-storage}
+    n169@{ shape: rect}
+    n173@{ shape: rect}
+    n174@{ shape: rect}
+    n175@{ shape: rect}
+    n62@{ shape: diam}
+    n64@{ shape: rect}
+    n65@{ shape: internal-storage}
+    n66@{ shape: rect}
+    n178@{ shape: rect}
+    n179@{ shape: rect}
+    n180@{ shape: internal-storage}
+    n181@{ shape: rect}
+    n69@{ shape: rect}
+    n234@{ shape: diam}
+    n235@{ shape: diam}
+    n237@{ shape: diam}
+    n248@{ shape: rect}
+    n254@{ shape: internal-storage}
+    n76@{ shape: rect}
+    n77@{ shape: rect}
+    n78@{ shape: rect}
+    n79@{ shape: internal-storage}
+    n83@{ shape: rect}
+    n84@{ shape: rect}
+    n86@{ shape: rect}
+    n88@{ shape: rect}
+    n91@{ shape: rect}
+    n92@{ shape: rect}
+    n182@{ shape: decision}
+    n183@{ shape: diam}
+    n186@{ shape: internal-storage}
+    n96@{ shape: rect}
+    n97@{ shape: internal-storage}
+    n98@{ shape: internal-storage}
+    n99@{ shape: lin-proc}
+    n95@{ shape: internal-storage}
+    n101@{ shape: proc}
+    n102@{ shape: proc}
+    n104@{ shape: internal-storage}
+    n107@{ shape: rect}
+    n108@{ shape: rect}
+    n109@{ shape: rect}
+    n110@{ shape: rect}
+    n112@{ shape: rect}
+    n113@{ shape: rect}
+    n258@{ shape: internal-storage}
+    n115@{ shape: rect}
+    n116@{ shape: internal-storage}
+    n118@{ shape: rect}
+    n120@{ shape: rect}
+    n121@{ shape: rect}
+    n122@{ shape: rect}
+    n123@{ shape: rect}
+    n124@{ shape: rect}
+    n125@{ shape: rect}
+    n126@{ shape: rect}
+    n129@{ shape: internal-storage}
+    n130@{ shape: internal-storage}
+    n131@{ shape: internal-storage}
+    n132@{ shape: internal-storage}
+    n133@{ shape: internal-storage}
+    n134@{ shape: internal-storage}
+    n140@{ shape: diam}
+    n141@{ shape: rect}
+    n142@{ shape: rect}
+    n143@{ shape: rect}
+    n144@{ shape: rect}
+    n145@{ shape: rect}
+    n146@{ shape: rect}
+    n147@{ shape: rect}
+    n261@{ shape: internal-storage}
+    n204@{ shape: internal-storage}
+    n211@{ shape: internal-storage}
+    n217@{ shape: internal-storage}
+    n9@{ shape: cyl}
+    n8@{ shape: cyl}
+    n15@{ shape: cyl}
+    n26@{ shape: internal-storage}
+    n27@{ shape: db}
+    n28@{ shape: db}
+    n63@{ shape: doc}
+    n176@{ shape: tag-proc}
+    n230@{ shape: internal-storage}
+    n74@{ shape: docs}
+    style n191 fill:#FFE0B2
+    style n226 fill:#FFE0B2
+    style n255 fill:#FFE0B2
+    style n181 fill:#FFE0B2
+    style n208 fill:#FFE0B2
+    style n9 fill:#FFCDD2
+    style n8 fill:#FFCDD2
+    style n15 fill:#FFCDD2
+    style n26 fill:#C8E6C9
+    style n27 fill:#BBDEFB
+    style n28 fill:#BBDEFB
+    style n63 fill:#FFF9C4
+    style n176 fill:#FFE0B2
+    style n230 fill:#C8E6C9
+    style n231 fill:#FFE0B2
+    style n74 fill:#FFF9C4
